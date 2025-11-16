@@ -595,22 +595,17 @@ bot.on('web_app_data', async (ctx) => {
         console.error('Web app data processing failed:', error);
     }
 });
-// 启动 Bot
-bot.launch();
-console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
+// 启动 Bot（webhook 模式，解决 409 冲突）
+const PORT = process.env.PORT || 10000;
+app.use(bot.webhookCallback('/webhook-bot')); // Webhook 路径，Telegram 推送消息到这里
+app.get('/', (req, res) => res.status(200).send('Bot OK')); // 健康检查，消除端口警告
+app.listen(PORT, '0.0.0.0', async () => {
+    console.log(`Server listening on port ${PORT}`);
+    await bot.telegram.setWebhook(`https://huiying888.onrender.com/webhook-bot`); // 替换你的 Render URL
+    console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
+});
 
 // Render 优雅关闭
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
-// 新增：Render 健康检查服务器（监听端口，返回 OK，消除警告）
-const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 10000;
-app.get('/', (req, res) => {
-    res.status(200).send('Bot is running OK');
-});
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Health check server listening on port ${PORT}`);
-});
 
