@@ -1,6 +1,6 @@
+const express = require('express'); // Express for webhook & health check
 const { Telegraf } = require('telegraf');
 const fs = require('fs'); // 仅用于持久化授权，图片不保存
-const express = require('express'); // Express for webhook & health check
 
 const bot = new Telegraf(process.env.BOT_TOKEN); // 先定义 bot
 const GROUP_CHAT_IDS = [
