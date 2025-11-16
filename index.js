@@ -1,5 +1,19 @@
+const express = require('express'); // 新增：Express for webhook & health check
 const { Telegraf } = require('telegraf');
 const fs = require('fs'); // 仅用于持久化授权，图片不保存
+
+// 先启动 Express 服务器（健康检查 + webhook）
+const app = express();
+const PORT = process.env.PORT || 10000;
+app.get('/', (req, res) => res.status(200).send('Bot OK')); // 健康检查端点
+app.use(express.json()); // 解析 JSON body for webhook
+app.use(bot.webhookCallback('/webhook-bot')); // Webhook 路径，Telegram 推送消息到这里
+
+app.listen(PORT, '0.0.0.0', async () => {
+    console.log(`Server listening on port ${PORT}`);
+    await bot.telegram.setWebhook(`https://huiying888.onrender.com/webhook-bot`); // 替换你的 Render URL
+});
+
 const bot = new Telegraf(process.env.BOT_TOKEN); // 强制用 env，无 fallback（Render 设置）
 const GROUP_CHAT_IDS = [
   -1003354803364, // Group 1: 替换为你的第一个群 ID
@@ -595,18 +609,11 @@ bot.on('web_app_data', async (ctx) => {
         console.error('Web app data processing failed:', error);
     }
 });
+
 // 启动 Bot（webhook 模式，解决 409 冲突）
-const PORT = process.env.PORT || 10000;
-const app = express(); // 定义 app（修复 ReferenceError）
 app.use(bot.webhookCallback('/webhook-bot')); // Webhook 路径
-app.get('/', (req, res) => res.status(200).send('Bot OK')); // 健康检查
-app.listen(PORT, '0.0.0.0', async () => {
-    console.log(`Server listening on port ${PORT}`);
-    await bot.telegram.setWebhook(`https://huiying888.onrender.com/webhook-bot`); // 你的 Render URL
-    console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
-});
+console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
 
 // Render 优雅关闭
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
