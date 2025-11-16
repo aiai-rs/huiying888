@@ -606,11 +606,11 @@ app.get('/health', (req, res) => {
 });
 
 // 新增：启动 - 加载授权 + 设置 webhook 并启动 Express 服务器
-loadAuth(); // 启动时加载（移到这里，避免 async 时序）
+loadAuth(); // 启动时加载
 (async () => {
   const PORT = process.env.PORT || 3000;
   const HOST = '0.0.0.0'; // Render 推荐：绑定所有接口
-  const webhookPath = '/bot'; // 手动定义 webhook 路径（避免 Telegraf 默认路径问题）
+  const webhookPath = bot.secretPath(); // 用 Telegraf 默认路径（带 token hash，更安全）
   const DOMAIN = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`; // Render 自动提供此变量
   const webhookUrl = `${DOMAIN}${webhookPath}`;
 
