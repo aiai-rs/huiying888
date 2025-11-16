@@ -1,5 +1,6 @@
 const { Telegraf } = require('telegraf');
 const fs = require('fs'); // 仅用于持久化授权，图片不保存
+const express = require('express'); // 新增：修复 express 未定义错误
 const bot = new Telegraf(process.env.BOT_TOKEN); // 强制用 env，无 fallback（Render 设置）
 const GROUP_CHAT_IDS = [
   -1003354803364, // Group 1: 替换为你的第一个群 ID
@@ -599,14 +600,22 @@ bot.on('web_app_data', async (ctx) => {
 bot.launch();
 console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
 
-// Render 优雅关闭
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// 新增：Express 服务器，防止 Render 休眠（保持实例活跃）
+const expressApp = express(); // 现在已导入，无错误
+expressApp.get('/', (req, res) => {
+    res.send('Bot is alive! 🚀'); // 健康检查端点
+});
+const PORT = process.env.PORT || 3000;
+expressApp.listen(PORT, () => {
+    console.log(`🌐 Express 服务器启动成功，监听端口 ${PORT}（防止 Render 休眠）`);
+});
 
-// 新增：Express 健康检查服务器（监听端口，消除警告）
-const expressApp = express();
-const PORT = process.env.PORT || 10000;
-expressApp.get('/', (req, res) => res.status(200).send('Bot OK'));
-expressApp.listen(PORT, '0.0.0.0', () => {
-    console.log(`Health check server listening on port ${PORT}`);
+// Render 优雅关闭
+process.once('SIGINT', () => {
+    console.log('收到 SIGINT，关闭 Bot 和服务器...');
+    bot.stop('SIGINT');
+});
+process.once('SIGTERM', () => {
+    console.log('收到 SIGTERM，关闭 Bot 和服务器...');
+    bot.stop('SIGTERM');
 });
