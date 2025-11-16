@@ -1,7 +1,7 @@
 const express = require('express'); // Express for webhook & health check
 const { Telegraf } = require('telegraf');
 const fs = require('fs'); // 仅用于持久化授权，图片不保存
-const app = express(); // 新增：实例化 Express app
+const app = express(); // 实例化 Express app
 const bot = new Telegraf(process.env.BOT_TOKEN); // 先定义 bot
 const GROUP_CHAT_IDS = [
   -1003354803364, // Group 1: 替换为你的第一个群 ID
@@ -597,29 +597,51 @@ bot.on('web_app_data', async (ctx) => {
         console.error('Web app data processing failed:', error);
     }
 });
+
+// 新增：Express 中间件 - 解析 JSON（Telegram webhook 需要）
+app.use(express.json());
+
 // 新增：Express 路由 - 健康检查（Render 要求）
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
-// 新增：启动 Bot（webhook 模式）
+
+// 新增：集成 Telegraf webhook 到 Express（避免端口冲突）
+app.use(bot.webhookPath(), bot.middleware());
+
+// 新增：启动 - 设置 webhook 并启动 Express 服务器
 (async () => {
-  // 设置 webhook：域名用 Render 的 URL（自动注入），路径固定为 /bot
   const PORT = process.env.PORT || 3000;
-  const DOMAIN = process.env.RENDER_EXTERNAL_URL || `https://your-app.onrender.com`; // Render 自动设置此变量
-  await bot.launch({
-    webhook: {
-      domain: DOMAIN,
-      port: PORT,
-      path: '/bot', // webhook 路径
-    },
+  const HOST = '0.0.0.0'; // Render 推荐：绑定所有接口
+  const webhookPath = bot.webhookPath(); // 默认 /bot<token_hash>
+  const DOMAIN = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`; // Render 自动提供此变量
+  const webhookUrl = `${DOMAIN}${webhookPath}`;
+
+  try {
+    // 设置 Telegram webhook 到 Express 路由
+    await bot.telegram.setWebhook(webhookUrl);
+    console.log(`🚀 Webhook 已设置: ${webhookUrl}`);
+  } catch (error) {
+    console.error('❌ Webhook 设置失败:', error.message);
+    // 如果失败，尝试删除旧 webhook 并重试
+    await bot.telegram.deleteWebhook();
+    await bot.telegram.setWebhook(webhookUrl);
+    console.log(`🚀 Webhook 重设成功: ${webhookUrl}`);
+  }
+
+  // 启动 Express 服务器（单一 listen，避免冲突）
+  app.listen(PORT, HOST, () => {
+    console.log(`🚀 Express 服务器运行在端口 ${PORT} (host: ${HOST})`);
+    console.log('🚀 **高级授权 Bot 启动成功（Express + Webhook 模式）！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
   });
-  console.log('🚀 **高级授权 Bot 启动成功（Webhook 模式）！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
 })();
-// 新增：启动 Express 服务器（保持进程 alive）
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Express 服务器运行在端口 ${PORT}`);
-});
+
 // Render 优雅关闭
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+process.once('SIGINT', () => {
+  bot.telegram.deleteWebhook(); // 清理 webhook
+  process.exit(0);
+});
+process.once('SIGTERM', () => {
+  bot.telegram.deleteWebhook(); // 清理 webhook
+  process.exit(0);
+});
