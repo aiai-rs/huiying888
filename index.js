@@ -606,9 +606,8 @@ app.get('/health', (req, res) => {
 });
 
 // 新增：启动 - 加载授权 + 设置 webhook 并启动 Express 服务器
+loadAuth(); // 启动时加载（移到这里，避免 async 时序）
 (async () => {
-  loadAuth(); // 启动时加载
-
   const PORT = process.env.PORT || 3000;
   const HOST = '0.0.0.0'; // Render 推荐：绑定所有接口
   const webhookPath = '/bot'; // 手动定义 webhook 路径（避免 Telegraf 默认路径问题）
@@ -618,16 +617,23 @@ app.get('/health', (req, res) => {
   // 集成 Telegraf webhook 到 Express（使用 webhookCallback 方法）
   app.use(webhookPath, bot.webhookCallback(webhookPath));
 
+  // 始终先删除旧 webhook，避免冲突
   try {
-    // 设置 Telegram webhook 到 Express 路由
+    await bot.telegram.deleteWebhook();
+    console.log('🧹 旧 webhook 已删除');
+  } catch (error) {
+    console.log('🧹 无旧 webhook 或删除失败（正常）:', error.message);
+  }
+
+  // 然后设置新 webhook
+  try {
     await bot.telegram.setWebhook(webhookUrl);
-    console.log(`🚀 Webhook 已设置: ${webhookUrl}`);
+    // 验证 webhook 设置
+    const webhookInfo = await bot.telegram.getWebhookInfo();
+    console.log(`🚀 Webhook 已设置并验证: ${webhookUrl} | 挂载URL: ${webhookInfo.url} | 待定更新: ${webhookInfo.pending_update_count}`);
   } catch (error) {
     console.error('❌ Webhook 设置失败:', error.message);
-    // 如果失败，尝试删除旧 webhook 并重试
-    await bot.telegram.deleteWebhook();
-    await bot.telegram.setWebhook(webhookUrl);
-    console.log(`🚀 Webhook 重设成功: ${webhookUrl}`);
+    process.exit(1); // 失败时退出，避免半启动状态
   }
 
   // 启动 Express 服务器（单一 listen，避免冲突）
@@ -637,14 +643,24 @@ app.get('/health', (req, res) => {
   });
 })();
 
-// Render 优雅关闭
+// Render 优雅关闭 - 清理 webhook
 process.once('SIGINT', async () => {
-  await bot.telegram.deleteWebhook(); // 清理 webhook
-  bot.stop('SIGINT');
+  console.log('🛑 接收 SIGINT，清理中...');
+  try {
+    await bot.telegram.deleteWebhook();
+    console.log('🧹 Webhook 已清理');
+  } catch (error) {
+    console.error('清理 webhook 失败:', error.message);
+  }
   process.exit(0);
 });
 process.once('SIGTERM', async () => {
-  await bot.telegram.deleteWebhook(); // 清理 webhook
-  bot.stop('SIGTERM');
+  console.log('🛑 接收 SIGTERM，清理中...');
+  try {
+    await bot.telegram.deleteWebhook();
+    console.log('🧹 Webhook 已清理');
+  } catch (error) {
+    console.error('清理 webhook 失败:', error.message);
+  }
   process.exit(0);
 });
