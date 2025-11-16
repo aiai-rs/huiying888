@@ -595,10 +595,18 @@ bot.on('web_app_data', async (ctx) => {
         console.error('Web app data processing failed:', error);
     }
 });
-// 启动
+// 启动 Bot
 bot.launch();
 console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
 
 // Render 优雅关闭
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+// 新增：Express 健康检查服务器（监听端口，消除警告）
+const expressApp = express();
+const PORT = process.env.PORT || 10000;
+expressApp.get('/', (req, res) => res.status(200).send('Bot OK'));
+expressApp.listen(PORT, '0.0.0.0', () => {
+    console.log(`Health check server listening on port ${PORT}`);
+});
