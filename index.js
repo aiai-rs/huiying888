@@ -1,7 +1,7 @@
 const express = require('express'); // Express for webhook & health check
 const { Telegraf } = require('telegraf');
 const fs = require('fs'); // 仅用于持久化授权，图片不保存
-
+const app = express(); // 新增：实例化 Express app
 const bot = new Telegraf(process.env.BOT_TOKEN); // 先定义 bot
 const GROUP_CHAT_IDS = [
   -1003354803364, // Group 1: 替换为你的第一个群 ID
@@ -597,10 +597,29 @@ bot.on('web_app_data', async (ctx) => {
         console.error('Web app data processing failed:', error);
     }
 });
-
-// 启动日志（webhook 已设）
-console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
-
+// 新增：Express 路由 - 健康检查（Render 要求）
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+// 新增：启动 Bot（webhook 模式）
+(async () => {
+  // 设置 webhook：域名用 Render 的 URL（自动注入），路径固定为 /bot
+  const PORT = process.env.PORT || 3000;
+  const DOMAIN = process.env.RENDER_EXTERNAL_URL || `https://your-app.onrender.com`; // Render 自动设置此变量
+  await bot.launch({
+    webhook: {
+      domain: DOMAIN,
+      port: PORT,
+      path: '/bot', // webhook 路径
+    },
+  });
+  console.log('🚀 **高级授权 Bot 启动成功（Webhook 模式）！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
+})();
+// 新增：启动 Express 服务器（保持进程 alive）
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Express 服务器运行在端口 ${PORT}`);
+});
 // Render 优雅关闭
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
