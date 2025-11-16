@@ -1,8 +1,6 @@
-const express = require('express'); // Express for webhook & health check
 const { Telegraf } = require('telegraf');
 const fs = require('fs'); // 仅用于持久化授权，图片不保存
-const app = express(); // 实例化 Express app
-const bot = new Telegraf(process.env.BOT_TOKEN); // 先定义 bot
+const bot = new Telegraf(process.env.BOT_TOKEN); // 强制用 env，无 fallback（Render 设置）
 const GROUP_CHAT_IDS = [
   -1003354803364, // Group 1: 替换为你的第一个群 ID
   -1003381368112, // Group 2: 替换为你的第二个群 ID
@@ -42,6 +40,7 @@ function saveAuth() {
         console.error('保存授权失败:', error);
     }
 }
+loadAuth(); // 启动时加载
 function factoryReset() {
     authorizedUsers.clear();
     pendingTasks.clear();
@@ -596,71 +595,10 @@ bot.on('web_app_data', async (ctx) => {
         console.error('Web app data processing failed:', error);
     }
 });
+// 启动
+bot.launch();
+console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
 
-// 新增：Express 中间件 - 解析 JSON（Telegram webhook 需要）
-app.use(express.json());
-
-// 新增：Express 路由 - 健康检查（Render 要求）
-app.get('/health', (req, res) => {
-  res.status(200).send('OK');
-});
-
-// 新增：启动 - 加载授权 + 设置 webhook 并启动 Express 服务器
-loadAuth(); // 启动时加载
-(async () => {
-  const PORT = process.env.PORT || 3000;
-  const HOST = '0.0.0.0'; // Render 推荐：绑定所有接口
-  const webhookPath = bot.secretPath(); // 用 Telegraf 默认路径（带 token hash，更安全）
-  const DOMAIN = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`; // Render 自动提供此变量
-  const webhookUrl = `${DOMAIN}${webhookPath}`;
-
-  // 集成 Telegraf webhook 到 Express（使用 webhookCallback 方法）
-  app.use(webhookPath, bot.webhookCallback(webhookPath));
-
-  // 始终先删除旧 webhook，避免冲突
-  try {
-    await bot.telegram.deleteWebhook();
-    console.log('🧹 旧 webhook 已删除');
-  } catch (error) {
-    console.log('🧹 无旧 webhook 或删除失败（正常）:', error.message);
-  }
-
-  // 然后设置新 webhook
-  try {
-    await bot.telegram.setWebhook(webhookUrl);
-    // 验证 webhook 设置
-    const webhookInfo = await bot.telegram.getWebhookInfo();
-    console.log(`🚀 Webhook 已设置并验证: ${webhookUrl} | 挂载URL: ${webhookInfo.url} | 待定更新: ${webhookInfo.pending_update_count}`);
-  } catch (error) {
-    console.error('❌ Webhook 设置失败:', error.message);
-    process.exit(1); // 失败时退出，避免半启动状态
-  }
-
-  // 启动 Express 服务器（单一 listen，避免冲突）
-  app.listen(PORT, HOST, () => {
-    console.log(`🚀 Express 服务器运行在端口 ${PORT} (host: ${HOST})`);
-    console.log('🚀 **高级授权 Bot 启动成功（Express + Webhook 模式）！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
-  });
-})();
-
-// Render 优雅关闭 - 清理 webhook
-process.once('SIGINT', async () => {
-  console.log('🛑 接收 SIGINT，清理中...');
-  try {
-    await bot.telegram.deleteWebhook();
-    console.log('🧹 Webhook 已清理');
-  } catch (error) {
-    console.error('清理 webhook 失败:', error.message);
-  }
-  process.exit(0);
-});
-process.once('SIGTERM', async () => {
-  console.log('🛑 接收 SIGTERM，清理中...');
-  try {
-    await bot.telegram.deleteWebhook();
-    console.log('🧹 Webhook 已清理');
-  } catch (error) {
-    console.error('清理 webhook 失败:', error.message);
-  }
-  process.exit(0);
-});
+// Render 优雅关闭
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
