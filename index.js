@@ -42,7 +42,6 @@ function saveAuth() {
         console.error('保存授权失败:', error);
     }
 }
-loadAuth(); // 启动时加载
 function factoryReset() {
     authorizedUsers.clear();
     pendingTasks.clear();
@@ -606,16 +605,18 @@ app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
-// 新增：集成 Telegraf webhook 到 Express（避免端口冲突）
-app.use(bot.webhookPath(), bot.middleware());
-
-// 新增：启动 - 设置 webhook 并启动 Express 服务器
+// 新增：启动 - 加载授权 + 设置 webhook 并启动 Express 服务器
 (async () => {
+  loadAuth(); // 启动时加载
+
   const PORT = process.env.PORT || 3000;
   const HOST = '0.0.0.0'; // Render 推荐：绑定所有接口
-  const webhookPath = bot.webhookPath(); // 默认 /bot<token_hash>
+  const webhookPath = '/bot'; // 手动定义 webhook 路径（避免 Telegraf 默认路径问题）
   const DOMAIN = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`; // Render 自动提供此变量
   const webhookUrl = `${DOMAIN}${webhookPath}`;
+
+  // 集成 Telegraf webhook 到 Express（使用 webhookCallback 方法）
+  app.use(webhookPath, bot.webhookCallback(webhookPath));
 
   try {
     // 设置 Telegram webhook 到 Express 路由
@@ -637,11 +638,13 @@ app.use(bot.webhookPath(), bot.middleware());
 })();
 
 // Render 优雅关闭
-process.once('SIGINT', () => {
-  bot.telegram.deleteWebhook(); // 清理 webhook
+process.once('SIGINT', async () => {
+  await bot.telegram.deleteWebhook(); // 清理 webhook
+  bot.stop('SIGINT');
   process.exit(0);
 });
-process.once('SIGTERM', () => {
-  bot.telegram.deleteWebhook(); // 清理 webhook
+process.once('SIGTERM', async () => {
+  await bot.telegram.deleteWebhook(); // 清理 webhook
+  bot.stop('SIGTERM');
   process.exit(0);
 });
