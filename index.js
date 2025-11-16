@@ -603,7 +603,7 @@ console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(G
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
-// 新增：Render 端口健康检查（消除警告）
+// 新增：Render 健康检查服务器（监听端口，返回 OK，消除警告）
 const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -613,3 +613,4 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Health check server listening on port ${PORT}`);
 });
+
