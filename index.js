@@ -21,7 +21,7 @@ const AUTH_FILE = './authorized.json'; // 新增：授权持久化文件（Rende
 let authorizedUsers = new Map(); // userId -> true (授权状态)
 const warningMessages = new Map(); // msgId -> {userId, userName} (用于授权回复警告)
 const unauthorizedMessages = new Map(); // msgId -> {userId, userName} (用于授权回复无权限)
-const zlMessages = new Map(); // 新增：msgId -> {targetUser, commandType: 'zl' | 'zj'} (用于 /zl 和 /zj 按钮更新)
+const zlMessages = new Map(); // 新增：msgId -> {targetUserId, targetFirstName, targetUsername, commandType: 'zl' | 'zj'} (用于 /zl 和 /zj 按钮更新)
 const ZL_LINKS = {
   '租车': 'https://che88.netlify.app',
   '大飞': 'https://fei88.netlify.app',
@@ -248,17 +248,21 @@ bot.command('zl', async (ctx) => {
         }
         return;
     }
-    let targetUser;
+    let targetUserId, targetFirstName, targetUsername;
     const replyTo = ctx.message.reply_to_message;
     if (replyTo) {
-        targetUser = replyTo.from.username || replyTo.from.first_name;
+        targetUserId = replyTo.from.id;
+        targetFirstName = replyTo.from.first_name || '未知';
+        targetUsername = replyTo.from.username ? `@${replyTo.from.username}` : '无用户名';
     } else {
         const match = ctx.message.text.match(/@(\w+)/);
         if (match) {
             const username = match[1];
             try {
                 const user = await bot.telegram.getChat(`@${username}`);
-                targetUser = username;
+                targetUserId = user.id;
+                targetFirstName = user.first_name || '未知';
+                targetUsername = `@${username}`;
             } catch (error) {
                 return ctx.reply(`❌ 👤 用户 @${username} 不存在！`);
             }
@@ -266,9 +270,9 @@ bot.command('zl', async (ctx) => {
             return ctx.reply('👆 请@用户或回复消息指定');
         }
     }
-    if (!targetUser) return ctx.reply('❌ 请指定用户！');
+    if (!targetUserId) return ctx.reply('❌ 请指定用户！');
     try {
-        const initialText = `${INITIAL_TEXT}\n\n👤 @${targetUser} 请点击下方按钮选择申请类型：`;
+        const initialText = `${INITIAL_TEXT}\n\n👤 请点击下方按钮选择申请类型：`;
         const replyMsg = await ctx.reply(initialText, {
             parse_mode: 'Markdown',
             reply_markup: {
@@ -284,7 +288,7 @@ bot.command('zl', async (ctx) => {
                 ]
             }
         });
-        zlMessages.set(replyMsg.message_id, { targetUser, commandType: 'zl' });
+        zlMessages.set(replyMsg.message_id, { targetUserId, targetFirstName, targetUsername, commandType: 'zl' });
     } catch (error) {
         console.error('/zl command failed:', error);
     }
@@ -305,17 +309,21 @@ bot.command('zj', async (ctx) => {
         }
         return;
     }
-    let targetUser;
+    let targetUserId, targetFirstName, targetUsername;
     const replyTo = ctx.message.reply_to_message;
     if (replyTo) {
-        targetUser = replyTo.from.username || replyTo.from.first_name;
+        targetUserId = replyTo.from.id;
+        targetFirstName = replyTo.from.first_name || '未知';
+        targetUsername = replyTo.from.username ? `@${replyTo.from.username}` : '无用户名';
     } else {
         const match = ctx.message.text.match(/@(\w+)/);
         if (match) {
             const username = match[1];
             try {
                 const user = await bot.telegram.getChat(`@${username}`);
-                targetUser = username;
+                targetUserId = user.id;
+                targetFirstName = user.first_name || '未知';
+                targetUsername = `@${username}`;
             } catch (error) {
                 return ctx.reply(`❌ 👤 用户 @${username} 不存在！`);
             }
@@ -323,9 +331,9 @@ bot.command('zj', async (ctx) => {
             return ctx.reply('👆 请@用户或回复消息指定');
         }
     }
-    if (!targetUser) return ctx.reply('❌ 请指定用户！');
+    if (!targetUserId) return ctx.reply('❌ 请指定用户！');
     try {
-        const initialText = `${INITIAL_TEXT}\n\n👤 @${targetUser} 请点击下方按钮选择申请类型：`;
+        const initialText = `${INITIAL_TEXT}\n\n👤 请点击下方按钮选择申请类型：`;
         const replyMsg = await ctx.reply(initialText, {
             parse_mode: 'Markdown',
             reply_markup: {
@@ -341,7 +349,7 @@ bot.command('zj', async (ctx) => {
                 ]
             }
         });
-        zlMessages.set(replyMsg.message_id, { targetUser, commandType: 'zj' });
+        zlMessages.set(replyMsg.message_id, { targetUserId, targetFirstName, targetUsername, commandType: 'zj' });
     } catch (error) {
         console.error('/zj command failed:', error);
     }
@@ -351,11 +359,8 @@ bot.on('callback_query', async (ctx) => {
     const data = ctx.callbackQuery.data;
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) return;
-    const userId = ctx.from.id;
-    const isUserAdmin = await isAdmin(chatId, userId);
-    if (!isUserAdmin) return;
     const msgId = ctx.callbackQuery.message.message_id;
-    // 新增：/zl 和 /zj 按钮处理
+    // 新增：/zl 和 /zj 按钮处理（允许任何人按）
     if (data.startsWith('zl_') || data.startsWith('zj_')) {
         const commandType = data.startsWith('zl_') ? 'zl' : 'zj';
         const buttonKey = data.split('_')[1];
@@ -366,8 +371,12 @@ bot.on('callback_query', async (ctx) => {
         }
         const links = commandType === 'zl' ? ZL_LINKS : ZJ_LINKS;
         const link = links[buttonKey];
-        const targetUser = stored.targetUser;
-        const newText = `${INITIAL_TEXT}\n\n🔗 申请链接： [${buttonKey}](${link})\n\n👤 @${targetUser}`;
+        const { targetUserId, targetFirstName, targetUsername } = stored;
+        const userInfo = `TG名字: ${targetFirstName}\nTG用户名: ${targetUsername}\nTGid: ${targetUserId}`;
+        const instruction = commandType === 'zl' ? 
+            '点击上方链接打开浏览器进行填写，填写时记住要录屏填写填写好了发到此群！' : 
+            '发给你的客户让客户打开浏览器进行填写时记住要录屏填写填写好了发到此群！';
+        const newText = `${INITIAL_TEXT}\n\n👤 ${userInfo}\n\n🔗 申请链接： [点击进入网站](${link})\n\n\`复制链接: ${link}\`\n\n${instruction}`;
         try {
             await ctx.editMessageText(newText, { parse_mode: 'Markdown' });
             await ctx.answerCbQuery(`✅ 已更新为 ${buttonKey} 链接！`);
@@ -378,7 +387,10 @@ bot.on('callback_query', async (ctx) => {
         }
         return;
     }
-    // 原有 /qc 处理
+    // 原有 /qc 处理（保持管理员检查）
+    const userId = ctx.from.id;
+    const isUserAdmin = await isAdmin(chatId, userId);
+    if (!isUserAdmin) return;
     if (data === 'qc_reset_yes') {
         factoryReset(); // 执行重置
         await ctx.answerCbQuery('✅ 出厂设置执行中...');
