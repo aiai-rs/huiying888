@@ -23,18 +23,18 @@ const warningMessages = new Map(); // msgId -> {userId, userName} (用于授权�
 const unauthorizedMessages = new Map(); // msgId -> {userId, userName} (用于授权回复无权限)
 const zlMessages = new Map(); // 新增：msgId -> {targetUserId, targetFirstName, targetUsername, commandType: 'zl' | 'zj'} (用于 /zl 和 /zj 按钮更新)
 const ZL_LINKS = {
-  '租车': 'che88.netlify.app',
-  '大飞': 'fei88.netlify.app',
-  '走药': 'yao88.netlify.app',
-  '背债': 'bei88.netlify.app'
+  '租车': 'https://che88.netlify.app',
+  '大飞': 'https://fei88.netlify.app',
+  '药': 'https://yao88.netlify.app',
+  '背债': 'https://bei88.netlify.app'
 };
 const ZJ_LINKS = {
-  '租车': 'zjc88.netlify.app',
-  '大飞': 'zjf88.netlify.app',
-  '走药': 'zjy88.netlify.app',
-  '背债': 'zjb88.netlify.app'
+  '租车': 'https://zjc88.netlify.app',
+  '大飞': 'https://zjf88.netlify.app',
+  '药': 'https://zjy88.netlify.app',
+  '背债': 'https://zjb88.netlify.app'
 };
-const INITIAL_TEXT = '填写招聘申请时请打开手机录屏，按照上面顺序排列填写资料后拍照关闭手机录屏后发送到此群！';
+const INITIAL_TEXT = '填写招聘申请时请打开手机录屏，按照上面顺序排列填写资料后拍照关闭手机录屏后发送到群里！';
 function loadAuth() {
     try {
         const data = fs.readFileSync(AUTH_FILE, 'utf8');
@@ -130,7 +130,7 @@ bot.command('bz', (ctx) => {
         `🔹 /boss - Boss 要求指定用户拍照 (汇盈国际负责人专用)\n` +
         `🔹 /lg - 龙哥要求指定用户拍照 汇盈国际负责人专用)\n` +
         `🔹 /zl - 招聘申请链接生成 (汇盈国际负责人专用)\n` +
-        `🔹 /zj - 招聘申请链接生成 (汇盈国际负责人专用)\n` +
+        `🔹 /zj - 招聘申请链接生成 (备用) (汇盈国际负责人专用)\n` +
         `🔹 /qc - 🗑️ 彻底恢复出厂 (汇盈国际负责人专用)\n` +
         `🔹 /lh - 🚫 踢出用户 (汇盈国际负责人专用)\n` +
         `🔹 /lj - 🔗 生成当前群组邀请链接 (汇盈国际负责人专用)\n` +
@@ -282,7 +282,7 @@ bot.command('zl', async (ctx) => {
                         { text: '大飞', callback_data: 'zl_大飞' }
                     ],
                     [
-                        { text: '走药', callback_data: 'zl_走药' },
+                        { text: '药', callback_data: 'zl_药' },
                         { text: '背债', callback_data: 'zl_背债' }
                     ]
                 ]
@@ -343,7 +343,7 @@ bot.command('zj', async (ctx) => {
                         { text: '大飞', callback_data: 'zj_大飞' }
                     ],
                     [
-                        { text: '走药', callback_data: 'zj_走药' },
+                        { text: '药', callback_data: 'zj_药' },
                         { text: '背债', callback_data: 'zj_背债' }
                     ]
                 ]
@@ -374,9 +374,9 @@ bot.on('callback_query', async (ctx) => {
         const { targetUserId, targetFirstName, targetUsername } = stored;
         const userInfo = `TG名字: ${targetFirstName}\nTG用户名: ${targetUsername}\nTGid: ${targetUserId}`;
         const instruction = commandType === 'zl' ? 
-            '点击上方链接打开浏览器进行填写，填写时记住要录屏填写填写好了发到此群！点击上面的复制链接即可复制' : 
-            '发给你的客户让客户打开浏览器，进行填写时记住要录屏填写填写好了发到此群！点击上面的复制链接即可复制';
-        const newText = `${INITIAL_TEXT}\n\n👤 ${userInfo}\n\n🔗 申请链接： [点击进入填写官网](${link})\n\n\`复制链接: ${link}\`\n\n${instruction}`;
+            '点击上方链接打开浏览器进行填写，填写时记住要录屏填写填写好了发到此群！' : 
+            '发给你的客户让客户打开浏览器进行填写时记住要录屏填写填写好了发到此群！';
+        const newText = `${INITIAL_TEXT}\n\n👤 ${userInfo}\n\n🔗 申请链接： [点击进入网站](${link})\n\n\`复制链接: ${link}\`\n\n${instruction}`;
         try {
             await ctx.editMessageText(newText, { parse_mode: 'Markdown' });
             await ctx.answerCbQuery(`✅ 已更新为 ${buttonKey} 链接！`);
@@ -785,6 +785,4 @@ process.once('SIGTERM', () => {
     console.log('收到 SIGTERM，关闭 Bot 和服务器...');
     bot.stop('SIGTERM');
 });
-
-
 
