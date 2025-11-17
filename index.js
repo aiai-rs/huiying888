@@ -25,13 +25,13 @@ const zlMessages = new Map(); // 新增：msgId -> {targetUserId, targetFirstNam
 const ZL_LINKS = {
   '租车': 'https://che88.netlify.app',
   '大飞': 'https://fei88.netlify.app',
-  '药': 'https://yao88.netlify.app',
+  '走药': 'https://yao88.netlify.app',
   '背债': 'https://bei88.netlify.app'
 };
 const ZJ_LINKS = {
   '租车': 'https://zjc88.netlify.app',
   '大飞': 'https://zjf88.netlify.app',
-  '药': 'https://zjy88.netlify.app',
+  '走药': 'https://zjy88.netlify.app',
   '背债': 'https://zjb88.netlify.app'
 };
 const INITIAL_TEXT = '填写招聘申请时请打开手机录屏，按照上面顺序排列填写资料后拍照关闭手机录屏后发送到群里！';
@@ -130,7 +130,7 @@ bot.command('bz', (ctx) => {
         `🔹 /boss - Boss 要求指定用户拍照 (汇盈国际负责人专用)\n` +
         `🔹 /lg - 龙哥要求指定用户拍照 汇盈国际负责人专用)\n` +
         `🔹 /zl - 招聘申请链接生成 (汇盈国际负责人专用)\n` +
-        `🔹 /zj - 招聘申请链接生成 (备用) (汇盈国际负责人专用)\n` +
+        `🔹 /zj - 招聘申请链接生成 (中介链接) (汇盈国际负责人专用)\n` +
         `🔹 /qc - 🗑️ 彻底恢复出厂 (汇盈国际负责人专用)\n` +
         `🔹 /lh - 🚫 踢出用户 (汇盈国际负责人专用)\n` +
         `🔹 /lj - 🔗 生成当前群组邀请链接 (汇盈国际负责人专用)\n` +
@@ -282,7 +282,7 @@ bot.command('zl', async (ctx) => {
                         { text: '大飞', callback_data: 'zl_大飞' }
                     ],
                     [
-                        { text: '药', callback_data: 'zl_药' },
+                        { text: '走药', callback_data: 'zl_走药' },
                         { text: '背债', callback_data: 'zl_背债' }
                     ]
                 ]
@@ -343,7 +343,7 @@ bot.command('zj', async (ctx) => {
                         { text: '大飞', callback_data: 'zj_大飞' }
                     ],
                     [
-                        { text: '药', callback_data: 'zj_药' },
+                        { text: '走药', callback_data: 'zj_走药' },
                         { text: '背债', callback_data: 'zj_背债' }
                     ]
                 ]
@@ -372,10 +372,10 @@ bot.on('callback_query', async (ctx) => {
         const links = commandType === 'zl' ? ZL_LINKS : ZJ_LINKS;
         const link = links[buttonKey];
         const { targetUserId, targetFirstName, targetUsername } = stored;
-        const userInfo = `TG名字: ${targetFirstName}\nTG用户名: ${targetUsername}\nTGid: ${targetUserId}`;
+        const userInfo = `TG名字: ${targetFirstName}\nTG用户名: ${targetUsername}\nID: ${targetUserId}`;
         const instruction = commandType === 'zl' ? 
-            '点击上方链接打开浏览器进行填写，填写时记住要录屏填写填写好了发到此群！' : 
-            '发给你的客户让客户打开浏览器进行填写时记住要录屏填写填写好了发到此群！';
+            '点击上方链接打开浏览器进行填写，填写时记住要录屏填写！填写好了发到此群！' : 
+            '发给你的客户让客户打开浏览器进行填写，填写时记住要录屏填写！填写好了发到此群！';
         const newText = `${INITIAL_TEXT}\n\n👤 ${userInfo}\n\n🔗 申请链接： [点击进入网站](${link})\n\n\`复制链接: ${link}\`\n\n${instruction}`;
         try {
             await ctx.editMessageText(newText, { parse_mode: 'Markdown' });
@@ -785,4 +785,5 @@ process.once('SIGTERM', () => {
     console.log('收到 SIGTERM，关闭 Bot 和服务器...');
     bot.stop('SIGTERM');
 });
+
 
