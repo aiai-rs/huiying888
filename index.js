@@ -21,6 +21,20 @@ const AUTH_FILE = './authorized.json'; // 新增：授权持久化文件（Rende
 let authorizedUsers = new Map(); // userId -> true (授权状态)
 const warningMessages = new Map(); // msgId -> {userId, userName} (用于授权回复警告)
 const unauthorizedMessages = new Map(); // msgId -> {userId, userName} (用于授权回复无权限)
+const zlMessages = new Map(); // 新增：msgId -> {targetUser, commandType: 'zl' | 'zj'} (用于 /zl 和 /zj 按钮更新)
+const ZL_LINKS = {
+  '租车': 'https://che88.netlify.app',
+  '大飞': 'https://fei88.netlify.app',
+  '药': 'https://yao88.netlify.app',
+  '背债': 'https://bei88.netlify.app'
+};
+const ZJ_LINKS = {
+  '租车': 'https://zjc88.netlify.app',
+  '大飞': 'https://zjf88.netlify.app',
+  '药': 'https://zjy88.netlify.app',
+  '背债': 'https://zjb88.netlify.app'
+};
+const INITIAL_TEXT = '填写招聘申请时请打开手机录屏，按照上面顺序排列填写资料后拍照关闭手机录屏后发送到群里！';
 function loadAuth() {
     try {
         const data = fs.readFileSync(AUTH_FILE, 'utf8');
@@ -47,6 +61,7 @@ function factoryReset() {
     pendingTasks.clear();
     warningMessages.clear();
     unauthorizedMessages.clear();
+    zlMessages.clear(); // 新增：清空 /zl /zj 状态
     try {
         fs.unlinkSync(AUTH_FILE);
         console.log('出厂设置完成: 所有状态清空，授权文件已删除');
@@ -114,6 +129,8 @@ bot.command('bz', (ctx) => {
         `🔹 /hc - 🚗 换车安全确认拍照 (授权用户专用)\n` +
         `🔹 /boss - Boss 要求指定用户拍照 (汇盈国际负责人专用)\n` +
         `🔹 /lg - 龙哥要求指定用户拍照 汇盈国际负责人专用)\n` +
+        `🔹 /zl - 招聘申请链接生成 (汇盈国际负责人专用)\n` +
+        `🔹 /zj - 招聘申请链接生成 (备用) (汇盈国际负责人专用)\n` +
         `🔹 /qc - 🗑️ 彻底恢复出厂 (汇盈国际负责人专用)\n` +
         `🔹 /lh - 🚫 踢出用户 (汇盈国际负责人专用)\n` +
         `🔹 /lj - 🔗 生成当前群组邀请链接 (汇盈国际负责人专用)\n` +
@@ -215,7 +232,121 @@ bot.command('qc', async (ctx) => {
         parse_mode: 'Markdown'
     });
 });
-// 处理 /qc 确认按钮
+// /zl 指令 - 新增：招聘申请链接生成 (回复指定用户)
+bot.command('zl', async (ctx) => {
+    const chatId = ctx.chat.id;
+    if (!GROUP_CHAT_IDS.includes(chatId)) {
+        return;
+    }
+    const isUserAdmin = await isAdmin(chatId, ctx.from.id);
+    if (!isUserAdmin) {
+        try {
+            const noPermMsg = await ctx.reply('❌ 🔒 无权限！ /zl 只限汇盈国际负责人使用。');
+            unauthorizedMessages.set(noPermMsg.message_id, { userId: ctx.from.id, userName: ctx.from.first_name || '用户' });
+        } catch (error) {
+            console.error('Permission check for /zl failed:', error);
+        }
+        return;
+    }
+    let targetUser;
+    const replyTo = ctx.message.reply_to_message;
+    if (replyTo) {
+        targetUser = replyTo.from.username || replyTo.from.first_name;
+    } else {
+        const match = ctx.message.text.match(/@(\w+)/);
+        if (match) {
+            const username = match[1];
+            try {
+                const user = await bot.telegram.getChat(`@${username}`);
+                targetUser = username;
+            } catch (error) {
+                return ctx.reply(`❌ 👤 用户 @${username} 不存在！`);
+            }
+        } else {
+            return ctx.reply('👆 请@用户或回复消息指定');
+        }
+    }
+    if (!targetUser) return ctx.reply('❌ 请指定用户！');
+    try {
+        const initialText = `${INITIAL_TEXT}\n\n👤 @${targetUser} 请点击下方按钮选择申请类型：`;
+        const replyMsg = await ctx.reply(initialText, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '租车', callback_data: 'zl_租车' },
+                        { text: '大飞', callback_data: 'zl_大飞' }
+                    ],
+                    [
+                        { text: '药', callback_data: 'zl_药' },
+                        { text: '背债', callback_data: 'zl_背债' }
+                    ]
+                ]
+            }
+        });
+        zlMessages.set(replyMsg.message_id, { targetUser, commandType: 'zl' });
+    } catch (error) {
+        console.error('/zl command failed:', error);
+    }
+});
+// /zj 指令 - 新增：招聘申请链接生成 (备用，回复指定用户)
+bot.command('zj', async (ctx) => {
+    const chatId = ctx.chat.id;
+    if (!GROUP_CHAT_IDS.includes(chatId)) {
+        return;
+    }
+    const isUserAdmin = await isAdmin(chatId, ctx.from.id);
+    if (!isUserAdmin) {
+        try {
+            const noPermMsg = await ctx.reply('❌ 🔒 无权限！ /zj 只限汇盈国际负责人使用。');
+            unauthorizedMessages.set(noPermMsg.message_id, { userId: ctx.from.id, userName: ctx.from.first_name || '用户' });
+        } catch (error) {
+            console.error('Permission check for /zj failed:', error);
+        }
+        return;
+    }
+    let targetUser;
+    const replyTo = ctx.message.reply_to_message;
+    if (replyTo) {
+        targetUser = replyTo.from.username || replyTo.from.first_name;
+    } else {
+        const match = ctx.message.text.match(/@(\w+)/);
+        if (match) {
+            const username = match[1];
+            try {
+                const user = await bot.telegram.getChat(`@${username}`);
+                targetUser = username;
+            } catch (error) {
+                return ctx.reply(`❌ 👤 用户 @${username} 不存在！`);
+            }
+        } else {
+            return ctx.reply('👆 请@用户或回复消息指定');
+        }
+    }
+    if (!targetUser) return ctx.reply('❌ 请指定用户！');
+    try {
+        const initialText = `${INITIAL_TEXT}\n\n👤 @${targetUser} 请点击下方按钮选择申请类型：`;
+        const replyMsg = await ctx.reply(initialText, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '租车', callback_data: 'zj_租车' },
+                        { text: '大飞', callback_data: 'zj_大飞' }
+                    ],
+                    [
+                        { text: '药', callback_data: 'zj_药' },
+                        { text: '背债', callback_data: 'zj_背债' }
+                    ]
+                ]
+            }
+        });
+        zlMessages.set(replyMsg.message_id, { targetUser, commandType: 'zj' });
+    } catch (error) {
+        console.error('/zj command failed:', error);
+    }
+});
+// 处理回调查询 - 扩展：添加 /zl /zj 按钮处理 + 原有 /qc
 bot.on('callback_query', async (ctx) => {
     const data = ctx.callbackQuery.data;
     const chatId = ctx.chat.id;
@@ -223,6 +354,31 @@ bot.on('callback_query', async (ctx) => {
     const userId = ctx.from.id;
     const isUserAdmin = await isAdmin(chatId, userId);
     if (!isUserAdmin) return;
+    const msgId = ctx.callbackQuery.message.message_id;
+    // 新增：/zl 和 /zj 按钮处理
+    if (data.startsWith('zl_') || data.startsWith('zj_')) {
+        const commandType = data.startsWith('zl_') ? 'zl' : 'zj';
+        const buttonKey = data.split('_')[1];
+        const stored = zlMessages.get(msgId);
+        if (!stored || stored.commandType !== commandType || !ZL_LINKS[buttonKey] && !ZJ_LINKS[buttonKey]) {
+            await ctx.answerCbQuery('❌ 无效操作！');
+            return;
+        }
+        const links = commandType === 'zl' ? ZL_LINKS : ZJ_LINKS;
+        const link = links[buttonKey];
+        const targetUser = stored.targetUser;
+        const newText = `${INITIAL_TEXT}\n\n🔗 申请链接： [${buttonKey}](${link})\n\n👤 @${targetUser}`;
+        try {
+            await ctx.editMessageText(newText, { parse_mode: 'Markdown' });
+            await ctx.answerCbQuery(`✅ 已更新为 ${buttonKey} 链接！`);
+            zlMessages.delete(msgId); // 清理状态
+        } catch (error) {
+            console.error('Edit message for zl/zj failed:', error);
+            await ctx.answerCbQuery('❌ 更新失败，请重试。');
+        }
+        return;
+    }
+    // 原有 /qc 处理
     if (data === 'qc_reset_yes') {
         factoryReset(); // 执行重置
         await ctx.answerCbQuery('✅ 出厂设置执行中...');
@@ -599,7 +755,6 @@ bot.on('web_app_data', async (ctx) => {
 // 启动 Bot
 bot.launch();
 console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
-
 // 新增：Express 服务器，防止 Render 休眠（保持实例活跃）
 const expressApp = express(); // 现在已导入，无错误
 expressApp.get('/', (req, res) => {
@@ -609,7 +764,6 @@ const PORT = process.env.PORT || 3000;
 expressApp.listen(PORT, () => {
     console.log(`🌐 Express 服务器启动成功，监听端口 ${PORT}（防止 Render 休眠）`);
 });
-
 // Render 优雅关闭
 process.once('SIGINT', () => {
     console.log('收到 SIGINT，关闭 Bot 和服务器...');
