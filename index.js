@@ -372,26 +372,14 @@ bot.on('callback_query', async (ctx) => {
         const links = commandType === 'zl' ? ZL_LINKS : ZJ_LINKS;
         const link = links[buttonKey];
         const { targetUserId, targetFirstName, targetUsername } = stored;
-        
+        const userInfo = `TG名字: ${targetFirstName}\nTG用户名: ${targetUsername}\nTGid: ${targetUserId}`;
         const instruction = commandType === 'zl' ? 
-            '📝 点击上方链接打开浏览器进行填写，填写时请打开手机录屏\n填写完毕后关闭录屏并把视频发到本群！' : 
-            '📝 请把下面链接发给你的客户\n让客户打开浏览器填写，填写时必须打开手机录屏\n填写完毕后关闭录屏并把视频发到本群！';
-
-        const newText = `${INITIAL_TEXT}\n\n` +
-            `💎 **目标用户资料** 💎\n\n` +
-            `👤 **TG名字**：${targetFirstName}\n` +
-            `📱 **TG用户名**：${targetUsername}\n` +
-            `🆔 **TG ID**：${targetUserId}\n\n` +
-            `🔗 **${buttonKey} 招聘申请链接** 🔗\n\n` +
-            `[🚀 点击立即打开填写页面](${link})\n\n` +
-            `\`${link}\`\n\n` +
-            // 纯链接代码块，长按即可复制纯链接（不带任何文字）\n` +
-            `📋 点击上方代码框即可复制纯链接\n\n` +
-            `${instruction}`;
-
+            '点击上方链接打开浏览器进行填写，填写时记住要录屏填写填写好了发到此群！' : 
+            '发给你的客户让客户打开浏览器进行填写时记住要录屏填写填写好了发到此群！';
+        const newText = `${INITIAL_TEXT}\n\n👤 ${userInfo}\n\n🔗 申请链接： [点击进入网站](${link})\n\n\`复制链接: ${link}\`\n\n${instruction}`;
         try {
             await ctx.editMessageText(newText, { parse_mode: 'Markdown' });
-            await ctx.answerCbQuery(`✅ 已成功生成 ${buttonKey} 链接！`);
+            await ctx.answerCbQuery(`✅ 已更新为 ${buttonKey} 链接！`);
             zlMessages.delete(msgId); // 清理状态
         } catch (error) {
             console.error('Edit message for zl/zj failed:', error);
@@ -797,3 +785,4 @@ process.once('SIGTERM', () => {
     console.log('收到 SIGTERM，关闭 Bot 和服务器...');
     bot.stop('SIGTERM');
 });
+
