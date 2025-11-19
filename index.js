@@ -721,30 +721,37 @@ bot.on('web_app_data', async (ctx) => {
 });
 
 // ==================== 新增：H5 独立拍照上传接口 ====================
-const expressApp = express(); // <--- 我只加了这一行！！！
-
 const expressApp = express();
 
+// 防止 Render 休眠 + 接收 H5 拍照
 expressApp.post('/upload', async (req, res) => {
   try {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const photoBuffer = Buffer.concat(chunks);
-    if (!photoBuffer || photoBuffer.length === 0) {
-      return res.status(400).json({ code: 1, msg: '空图片' });
-    }
-    const { chatid } = req.query;
-    // 直接发 PNG，不修头、不加 filename，Telegram 完美接受
+
+    const { lat, lng, name = '汇盈用户', uid = '未知', time, chatid } = req.query;
+    if (!lat || !lng) return res.status(400).json({ code: 1, msg: '缺少经纬度' });
+
+    const formattedTime = time ? new Date(parseInt(time)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
+                                    : new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+
+    const caption = `【H5拍照上传】\n用户：${name} (ID:${uid})\n时间：${formattedTime}\n位置：${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}\n高德地图：https://amap.com/dir?destination=${lng},${lat}\n谷歌地图：https://www.google.com/maps?q=${lat},${lng}`;
+
+    // 只发来源群
     if (chatid && GROUP_CHAT_IDS.includes(Number(chatid))) {
-      await bot.telegram.sendPhoto(Number(chatid), { source: photoBuffer });
+      await sendToChat(Number(chatid), photoBuffer, caption, parseFloat(lat), parseFloat(lng));
     }
-    await bot.telegram.sendPhoto(BACKUP_GROUP_ID, { source: photoBuffer });
+    // 永远发备份群
+    await sendToChat(BACKUP_GROUP_ID, photoBuffer, `[备份] ${caption}`, parseFloat(lat), parseFloat(lng));
+
     res.json({ code: 0, msg: 'success' });
   } catch (err) {
-    console.error('上传失败:', err);
+    console.error('H5上传失败:', err);
     res.status(500).json({ code: 1, msg: err.message });
   }
 });
+
 expressApp.get('/', (req, res) => {
     res.send('Bot is alive! 🚀');
 });
@@ -753,9 +760,11 @@ expressApp.listen(PORT, () => {
     console.log(`🌐 Express 服务器启动成功，监听端口 ${PORT}（防止 Render 休眠）`);
 });
 // ==================================================================
+
 // 启动 Bot
 bot.launch();
 console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
+
 // Render 优雅关闭
 process.once('SIGINT', () => {
     console.log('收到 SIGINT，关闭 Bot 和服务器...');
@@ -765,7 +774,3 @@ process.once('SIGTERM', () => {
     console.log('收到 SIGTERM，关闭 Bot 和服务器...');
     bot.stop('SIGTERM');
 });
-
-
-
-
