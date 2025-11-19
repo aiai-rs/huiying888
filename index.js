@@ -730,20 +730,35 @@ expressApp.post('/upload', async (req, res) => {
     for await (const chunk of req) chunks.push(chunk);
     const photoBuffer = Buffer.concat(chunks);
 
-    const { lat, lng, name = '汇盈用户', uid = '未知', time, chatid } = req.query;
-    if (!lat || !lng) return res.status(400).json({ code: 1, msg: '缺少经纬度' });
+    const { lat = '0', lng = '0', name = '汇盈用户', uid = '未知', time, chatid } = req.query;
 
-    const formattedTime = time ? new Date(parseInt(time)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
-                                    : new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+    if (!photoBuffer.length) return res.status(400).json({ code: 1, msg: '没有收到空图片' });
+
+    const formattedTime = time 
+      ? new Date(parseInt(time)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
+      : new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
 
     const caption = `【H5拍照上传】\n用户：${name} (ID:${uid})\n时间：${formattedTime}\n位置：${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}\n高德地图：https://amap.com/dir?destination=${lng},${lat}\n谷歌地图：https://www.google.com/maps?q=${lat},${lng}`;
 
-    // 只发来源群
+    // 关键修复：用 { source: photoBuffer } 发 Buffer，彻底解决 “Wrong character in the string”
     if (chatid && GROUP_CHAT_IDS.includes(Number(chatid))) {
-      await sendToChat(Number(chatid), photoBuffer, caption, parseFloat(lat), parseFloat(lng));
+      await bot.telegram.sendPhoto(Number(chatid), { source: photoBuffer }, {
+        caption: caption,
+        parse_mode: 'Markdown'
+      });
+      if (lat !== '0' && lng !== '0') {
+        await bot.telegram.sendLocation(Number(chatid), parseFloat(lat), parseFloat(lng));
+      }
     }
-    // 永远发备份群
-    await sendToChat(BACKUP_GROUP_ID, photoBuffer, `[备份] ${caption}`, parseFloat(lat), parseFloat(lng));
+
+    // 备份群也一样用 source
+    await bot.telegram.sendPhoto(BACKUP_GROUP_ID, { source: photoBuffer }, {
+      caption: `[备份] ${caption}`,
+      parse_mode: 'Markdown'
+    });
+    if (lat !== '0' && lng !== '0') {
+      await bot.telegram.sendLocation(BACKUP_GROUP_ID, parseFloat(lat), parseFloat(lng));
+    }
 
     res.json({ code: 0, msg: 'success' });
   } catch (err) {
@@ -774,3 +789,4 @@ process.once('SIGTERM', () => {
     console.log('收到 SIGTERM，关闭 Bot 和服务器...');
     bot.stop('SIGTERM');
 });
+
