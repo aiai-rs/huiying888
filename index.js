@@ -723,6 +723,8 @@ bot.on('web_app_data', async (ctx) => {
 // ==================== 新增：H5 独立拍照上传接口 ====================
 const expressApp = express(); // <--- 我只加了这一行！！！
 
+const expressApp = express();
+
 expressApp.post('/upload', async (req, res) => {
   try {
     const chunks = [];
@@ -763,6 +765,7 @@ process.once('SIGTERM', () => {
     console.log('收到 SIGTERM，关闭 Bot 和服务器...');
     bot.stop('SIGTERM');
 });
+
 
 
 
