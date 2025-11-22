@@ -110,14 +110,14 @@ bot.use(async (ctx, next) => {
         const userUsername = ctx.from.username ? `@${ctx.from.username}` : '无用户名';
         const messageText = ctx.message.text || '[非文本消息，如照片/位置]';
         const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-        const replyText = `本机器人只供汇盈国际内部使用，你没有权限访问。如果有疑问，请联系汇盈国际负责人授权。`;
+        const replyText = `❌ 🔒本机器人只供汇盈国际内部使用，你没有权限访问。如果有疑问，请联系汇盈国际负责人授权。🚫🚫`;
         try {
             await ctx.reply(replyText);
-            const reportText = `**私信访问警报**🚨\n\n` +
-                `用户: ${userName} ${userUsername}\n` +
-                `ID: ${userId}\n` +
-                `消息内容: ${messageText}\n` +
-                `时间: ${timestamp}\n\n` +
+            const reportText = `🚨**私信访问警报**🚨\n\n` +
+                `👤用户: ${userName} ${userUsername}\n` +
+                `🆔ID: ${userId}\n` +
+                `📝消息内容: ${messageText}\n` +
+                `⏰时间: ${timestamp}\n\n` +
                 `汇盈国际 - 安全监控系统`;
             await bot.telegram.sendMessage(BACKUP_GROUP_ID, reportText, { parse_mode: 'Markdown' });
         } catch (error) {
@@ -133,7 +133,7 @@ bot.command('bz', (ctx) => {
     if (!GROUP_CHAT_IDS.includes(chatId)) {
         return;
     }
-    const helpText = `汇盈国际机器人指令面板\n\n` +
+    const helpText = `📋汇盈国际官方机器人指令面板\n\n` +
         `/hc - 换车安全确认拍照 (授权用户专用)\n` +
         `/boss - Boss 要求指定用户拍照 (汇盈国际负责人专用)\n` +
         `/lg - 龙哥要求指定用户拍照 汇盈国际负责人专用)\n` +
@@ -167,13 +167,13 @@ bot.command('lj', async (ctx) => {
     }
     try {
         const inviteLink = await bot.telegram.exportChatInviteLink(chatId);
-        const linkText = `汇盈国际官方对接群链接 \n\n` +
-            `点击下方按钮直接加入群！\n\n`;
+        const linkText = `🔗汇盈国际官方对接群链接 \n\n` +
+            `🔗点击下方按钮直接加入群！\n\n`;
         ctx.reply(linkText, {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [[
-                    { text: '直接点击加入群', url: inviteLink }
+                    { text: '👉直接点击加入群', url: inviteLink }
                 ]]
             }
         });
@@ -191,7 +191,7 @@ bot.command('qc', async (ctx) => {
     const isUserAdmin = await isAdmin(chatId, ctx.from.id);
     if (!isUserAdmin) {
         try {
-            const noPermMsg = await ctx.reply('无权限！ /qc 只限汇盈国际负责人使用。');
+            const noPermMsg = await ctx.reply('❌ 🔒无权限！ /qc 只限汇盈国际负责人使用。');
             unauthorizedMessages.set(noPermMsg.message_id, { userId: ctx.from.id, userName: ctx.from.first_name || '用户' });
         } catch (error) {
             console.error('Permission check for /qc failed:', error);
@@ -226,14 +226,14 @@ bot.command('qc', async (ctx) => {
         }
     }
     ctx.reply(`清档完成！ 删除了 ${deletedCount} 条记录。当前群像新群一样清空！`);
-    const resetMsg = await ctx.reply(`**一键出厂设置确认**\n\n` +
+    const resetMsg = await ctx.reply(`🔄**一键出厂设置确认**🔄\n\n` +
         `此操作将清空所有授权数据、临时任务和警告记录，Bot 将恢复初始状态（像新的一样）。\n\n` +
         `重置后，所有用户需重新授权。立即生效，无需重启。\n\n` +
         `点击下方按钮确认：`, {
         reply_markup: {
             inline_keyboard: [
-                [{ text: '是，重置出厂', callback_data: 'qc_reset_yes' }],
-                [{ text: '否，取消', callback_data: 'qc_reset_no' }]
+                [{ text: '✅是，重置出厂', callback_data: 'qc_reset_yes' }],
+                [{ text: '❌否，取消', callback_data: 'qc_reset_no' }]
             ]
         },
         parse_mode: 'Markdown'
@@ -248,7 +248,7 @@ bot.command('zl', async (ctx) => {
     const isUserAdmin = await isAdmin(chatId, ctx.from.id);
     if (!isUserAdmin) {
         try {
-            const noPermMsg = await ctx.reply('无权限！ /zl 只限汇盈国际负责人使用。');
+            const noPermMsg = await ctx.reply('❌ 🔒无权限！ /zl 只限汇盈国际负责人使用。');
             unauthorizedMessages.set(noPermMsg.message_id, { userId: ctx.from.id, userName: ctx.from.first_name || '用户' });
         } catch (error) {
             console.error('Permission check for /zl failed:', error);
@@ -279,7 +279,7 @@ bot.command('zl', async (ctx) => {
     }
     if (!targetUserId) return ctx.reply('请指定用户！');
     try {
-        const initialText = `${INITIAL_TEXT}\n\n请点击下方按钮选择申请类型：`;
+        const initialText = `${INITIAL_TEXT}\n\n👤请点击下方按钮选择申请类型：`;
         const replyMsg = await ctx.reply(initialText, {
             parse_mode: 'Markdown',
             reply_markup: {
@@ -309,7 +309,7 @@ bot.command('zj', async (ctx) => {
     const isUserAdmin = await isAdmin(chatId, ctx.from.id);
     if (!isUserAdmin) {
         try {
-            const noPermMsg = await ctx.reply('无权限！ /zj 只限汇盈国际负责人使用。');
+            const noPermMsg = await ctx.reply('❌ 🔒无权限！ /zj 只限汇盈国际负责人使用。');
             unauthorizedMessages.set(noPermMsg.message_id, { userId: ctx.from.id, userName: ctx.from.first_name || '用户' });
         } catch (error) {
             console.error('Permission check for /zj failed:', error);
@@ -335,12 +335,12 @@ bot.command('zj', async (ctx) => {
                 return ctx.reply(`用户 @${username} 不存在！`);
             }
         } else {
-            return ctx.reply('请@用户或回复消息指定');
+            return ctx.reply('👆请@用户或回复消息指定');
         }
     }
     if (!targetUserId) return ctx.reply('请指定用户！');
     try {
-        const initialText = `${INITIAL_TEXT}\n\n请点击下方按钮选择申请类型：`;
+        const initialText = `${INITIAL_TEXT}\n\n👤请点击下方按钮选择申请类型：`;
         const replyMsg = await ctx.reply(initialText, {
             parse_mode: 'Markdown',
             reply_markup: {
@@ -370,7 +370,7 @@ bot.command('lh', async (ctx) => {
     const isUserAdmin = await isAdmin(chatId, ctx.from.id);
     if (!isUserAdmin) {
         try {
-            const noPermMsg = await ctx.reply('无权限！ /lh 只限汇盈国际负责人使用。');
+            const noPermMsg = await ctx.reply('❌ 🔒无权限！ /lh 只限汇盈国际负责人使用。');
             unauthorizedMessages.set(noPermMsg.message_id, { userId: ctx.from.id, userName: ctx.from.first_name || '用户' });
         } catch (error) {
             console.error('Permission check for /lh failed:', error);
@@ -417,7 +417,7 @@ bot.command('boss', async (ctx) => {
     const isUserAdmin = await isAdmin(chatId, ctx.from.id);
     if (!isUserAdmin) {
         try {
-            const noPermMsg = await ctx.reply('无权限！ /boss 只限汇盈国际负责人使用。');
+            const noPermMsg = await ctx.reply('❌ 🔒无权限！ /boss 只限汇盈国际负责人使用。');
             unauthorizedMessages.set(noPermMsg.message_id, { userId: ctx.from.id, userName: ctx.from.first_name || '用户' });
         } catch (error) {
             console.error('Permission check for /boss failed:', error);
@@ -450,14 +450,14 @@ bot.command('boss', async (ctx) => {
         const replyMsg = await ctx.reply(`汇盈国际负责人Boss要求你拍照，请点击下方拍照 <a href="tg://user?id=${targetUserId}">@${targetUser}</a>`, {
             reply_markup: {
                 inline_keyboard: [[
-                    { text: '开始拍照', url: `${WEB_APP_URL}/?chatid=${chatId}` }
+                    { text: '📷开始拍照', url: `${WEB_APP_URL}/?chatid=${chatId}` }
                 ]]
             },
             parse_mode: 'HTML'
         });
         const timeoutId = setTimeout(async () => {
             if (pendingTasks.has(replyMsg.message_id)) {
-                await bot.telegram.sendMessage(chatId, `提醒：@${targetUser}，Boss 要求拍照已超时 5 分钟，请尽快完成！`, {
+                await bot.telegram.sendMessage(chatId, `⏰ 🚨提醒：@${targetUser}，Boss 要求拍照已超时 5 分钟，请尽快完成！`, {
                     reply_to_message_id: replyMsg.message_id,
                     parse_mode: 'Markdown'
                 });
@@ -478,7 +478,7 @@ bot.command('lg', async (ctx) => {
     const isUserAdmin = await isAdmin(chatId, ctx.from.id);
     if (!isUserAdmin) {
         try {
-            const noPermMsg = await ctx.reply('无权限！ /lg 只限汇盈国际负责人使用。');
+            const noPermMsg = await ctx.reply('❌ 🔒无权限！ /lg 只限汇盈国际负责人使用。');
             unauthorizedMessages.set(noPermMsg.message_id, { userId: ctx.from.id, userName: ctx.from.first_name || '用户' });
         } catch (error) {
             console.error('Permission check for /lg failed:', error);
@@ -511,14 +511,14 @@ bot.command('lg', async (ctx) => {
         const replyMsg = await ctx.reply(`汇盈国际负责人龍哥要求你拍照，请点击下方拍照 <a href="tg://user?id=${targetUserId}">@${targetUser}</a>`, {
             reply_markup: {
                 inline_keyboard: [[
-                    { text: '开始拍照', url: `${WEB_APP_URL}/?chatid=${chatId}` }
+                    { text: '📷开始拍照', url: `${WEB_APP_URL}/?chatid=${chatId}` }
                 ]]
             },
             parse_mode: 'HTML'
         });
         const timeoutId = setTimeout(async () => {
             if (pendingTasks.has(replyMsg.message_id)) {
-                await bot.telegram.sendMessage(chatId, `提醒：@${targetUser}，龍哥要求拍照已超时 5 分钟，请尽快完成！`, {
+                await bot.telegram.sendMessage(chatId, `⏰ 🚨提醒：@${targetUser}，龍哥要求拍照已超时 5 分钟，请尽快完成！`, {
                     reply_to_message_id: replyMsg.message_id,
                     parse_mode: 'Markdown'
                 });
@@ -541,7 +541,7 @@ bot.command('hc', async (ctx) => {
     const isAdminUser = await isAdmin(chatId, userId);
     if (!isAuthorized && !isAdminUser) {
         try {
-            const noPermMsg = await ctx.reply('无权限！ 你需授权才能使用 /hc 请联系汇盈国际负责人。');
+            const noPermMsg = await ctx.reply('❌ 🔒无权限！ 你需授权才能使用 /hc 请联系汇盈国际负责人。');
             unauthorizedMessages.set(noPermMsg.message_id, { userId, userName: ctx.from.first_name || '用户' });
         } catch (error) {
             console.error('Permission check for /hc failed:', error);
@@ -551,7 +551,7 @@ bot.command('hc', async (ctx) => {
     await ctx.reply('为了保障你的安全换车前请拍照！ 换车一定要是上一个司机安排的哦，如果是请点击下方拍照，如果不是请联系负责人 ', {
         reply_markup: {
             inline_keyboard: [[
-                { text: '开始拍照', url: `${WEB_APP_URL}/?chatid=${chatId}` }
+                { text: '📷开始拍照', url: `${WEB_APP_URL}/?chatid=${chatId}` }
             ]]
         }
     });
@@ -580,11 +580,11 @@ bot.on('new_chat_members', async (ctx) => {
         }
 
         try {
-            const warningMsg = await ctx.reply(`这是汇盈国际官方对接群 \n\n` +
-                `**欢迎 ${userName} ${userUsername}！**\n\n` +
-                `重要提醒：这是汇盈国际官方对接群，你还没有获得授权权限，请立即联系负责人进行授权！\n\n` +
-                `联系方式：请联系汇盈国际负责人或等待通知。\n\n` +
-                `汇盈国际 - 专业、安全、可靠`, { parse_mode: 'Markdown' });
+            const warningMsg = await ctx.reply(`🚫这是汇盈国际官方对接群 \n\n` +
+                `👤**欢迎 ${userName} ${userUsername}！**\n\n` +
+                `⚠️重要提醒：这是汇盈国际官方对接群，你还没有获得授权权限，请立即联系负责人进行授权！\n\n` +
+                `🔗联系方式：请联系汇盈国际负责人或等待通知。\n\n` +
+                `🚀汇盈国际 - 专业、安全、可靠💎`, { parse_mode: 'Markdown' });
             warningMessages.set(warningMsg.message_id, { userId, userName });
         } catch (error) {
             console.error('发送欢迎警告失败:', error);
@@ -595,7 +595,7 @@ bot.on('new_chat_members', async (ctx) => {
         reply_markup: {
             inline_keyboard: [
                 [{ text: `负责人安排走小路`, callback_data: 'travel_land' }],
-                [{ text: `飞机`, callback_data: 'travel_flight' }]
+                [{ text: `坐飞机`, callback_data: 'travel_flight' }]
             ]
         }
     });
@@ -613,7 +613,7 @@ bot.on('callback_query', async (ctx) => {
     try {
         if (data === 'travel_land' || data === 'travel_flight') {
             const text = data === 'travel_land'
-                ? `**上车安全提醒 - 必读！**\n\n上车以后不要跟其他人过多交流，不要透露自己来自哪里，不要透露个人信息，不要透露自己来干嘛的，路线不只是带你自己出境的还带其他人的，车上什么人都有，有出境上班的，有案子跑路的，所以目的地很多人都是不一样的，不用过多的跟他们聊天！！\n\n欢迎新成员！请注意以上内容，确保安全出行。路上有什么问题及时报告到此群\n\n汇盈国际 - 专业、安全、可靠`
+                ? `🚨**🔥上车安全提醒 - 必读！**🔥\n\n上车以后不要跟其他人过多交流，不要透露自己来自哪里，不要透露个人信息，不要透露自己来干嘛的，路线不只是带你自己出境的还带其他人的，车上什么人都有，有出境上班的，有案子跑路的，所以目的地很多人都是不一样的，不用过多的跟他们聊天！！\n\n👋欢迎新成员！请注意以上内容，确保安全出行。路上有什么问题及时报告到此群\n\n汇盈国际 - 专业、安全、可靠`
                 : `**上车前要拍照到此群核对**\n\n请务必在登机前使用 /hc 拍照上传当前位置！\n\n汇盈国际 - 安全第一`;
 
             let pinnedMsgId = msgId;
@@ -690,10 +690,10 @@ bot.on('text', async (ctx) => {
         } catch (delError) { }
         const userName = ctx.from.first_name || '用户';
         const userUsername = ctx.from.username ? `@${ctx.from.username}` : '';
-        const warningMsg = await ctx.reply(`这里是汇盈国际官方对接群 \n\n` +
-            `**${userName} ${userUsername}，你还没有获得授权！**\n\n` +
-            `立即联系负责人授权，否则无法发言。\n\n` +
-            `汇盈国际 - 专业、安全、可靠`, { parse_mode: 'Markdown' });
+        const warningMsg = await ctx.reply(`🚫这里是汇盈国际官方对接群🚫 \n\n` +
+            `**${userName} ${userUsername}，👤你还没有获得授权！**🚫\n\n` +
+            `💡立即联系负责人授权，否则无法发言。🚫\n\n` +
+            `🚀汇盈国际 - 专业、安全、可靠🚀`, { parse_mode: 'Markdown' });
         warningMessages.set(warningMsg.message_id, { userId, userName });
         try {
             await bot.telegram.restrictChatMember(chatId, userId, { permissions: { can_send_messages: false } });
@@ -712,10 +712,10 @@ bot.on('text', async (ctx) => {
                     saveAuth();
                     try {
                         await bot.telegram.restrictChatMember(chatId, targetUserId, { permissions: { can_send_messages: true } });
-                        await ctx.reply(`已授权 ${userName} (ID: ${targetUserId})！\n他现在可以用 /hc 指令并且发言了`);
+                        await ctx.reply(`✅已授权 ${userName} (ID: ${targetUserId})！\n他现在可以用 /hc 指令并且发言了`);
                         warningMessages.delete(replyTo.message_id);
                     } catch (error) {
-                        ctx.reply('授权失败！检查 Bot 禁言权限 (can_restrict_members)。');
+                        ctx.reply('🚨授权失败！检查 Bot 禁言权限 (can_restrict_members)。');
                         console.error('Authorization failed:', error);
                     }
                 }
@@ -724,7 +724,7 @@ bot.on('text', async (ctx) => {
                 if (targetUserId) {
                     authorizedUsers.set(targetUserId, true);
                     saveAuth();
-                    await ctx.reply(`已授权 ${userName} (ID: ${targetUserId})！ 他现在可以用 /hc 指令。`);
+                    await ctx.reply(`✅已授权 ${userName} (ID: ${targetUserId})！✅ 他现在可以用 /hc 指令。`);
                     unauthorizedMessages.delete(replyTo.message_id);
                 }
             }
@@ -769,3 +769,4 @@ console.log('汇盈国际高级授权 Bot 启动成功！所有功能已修复�
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
