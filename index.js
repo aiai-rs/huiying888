@@ -1,6 +1,9 @@
 const { Telegraf } = require('telegraf');
 const fs = require('fs');
 const express = require('express');
+
+// 解决多实例冲突
+let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 const GROUP_CHAT_IDS = [
@@ -99,6 +102,7 @@ async function isAdmin(chatId, userId) {
         const member = await bot.telegram.getChatMember(chatId, userId);
         return member.status === 'administrator' || member.status === 'creator';
     } catch (error) {
+        console.error('检查管理员权限失败:', error);
         return false;
     }
 }
@@ -240,12 +244,18 @@ bot.command('qc', async (ctx) => {
     });
 });
 
+// ==================== 修复 /zl 指令 ====================
 bot.command('zl', async (ctx) => {
+    console.log('收到 /zl 命令', ctx.chat.id, ctx.from.id);
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
+        console.log('群组不在允许列表中:', chatId);
         return;
     }
+    
     const isUserAdmin = await isAdmin(chatId, ctx.from.id);
+    console.log('用户管理员状态:', isUserAdmin, '用户ID:', ctx.from.id);
+    
     if (!isUserAdmin) {
         try {
             const noPermMsg = await ctx.reply('❌ 🔒无权限！ /zl 只限汇盈国际负责人使用。');
@@ -255,29 +265,40 @@ bot.command('zl', async (ctx) => {
         }
         return;
     }
+    
     let targetUserId, targetFirstName, targetUsername;
     const replyTo = ctx.message.reply_to_message;
+    
     if (replyTo) {
         targetUserId = replyTo.from.id;
         targetFirstName = replyTo.from.first_name || '未知';
         targetUsername = replyTo.from.username ? `@${replyTo.from.username}` : '无用户名';
+        console.log('通过回复指定用户:', targetUserId, targetFirstName, targetUsername);
     } else {
         const match = ctx.message.text.match(/@(\w+)/);
         if (match) {
             const username = match[1];
             try {
-                const user = await bot.telegram.getChat(`@${username}`);
-                targetUserId = user.id;
-                targetFirstName = user.first_name || '未知';
+                await ctx.reply(`正在查找用户 @${username}...`);
+                const user = await bot.telegram.getChatMember(chatId, `@${username}`);
+                targetUserId = user.user.id;
+                targetFirstName = user.user.first_name || '未知';
                 targetUsername = `@${username}`;
+                console.log('通过@指定用户:', targetUserId, targetFirstName, targetUsername);
             } catch (error) {
-                return ctx.reply(`用户 @${username} 不存在！`);
+                console.error('获取用户信息失败:', error);
+                return ctx.reply(`用户 @${username} 不存在或不在本群！`);
             }
         } else {
-            return ctx.reply('请@用户或回复消息指定');
+            return ctx.reply('请回复用户消息或@用户名来指定目标用户！\n\n例如：\n- 回复用户消息后输入 /zl\n- 或直接输入 /zl @用户名');
         }
     }
-    if (!targetUserId) return ctx.reply('请指定用户！');
+    
+    if (!targetUserId) {
+        console.log('未找到目标用户ID');
+        return ctx.reply('无法获取用户信息，请重试！');
+    }
+    
     try {
         const initialText = `${INITIAL_TEXT}\n\n👤请点击下方按钮选择申请类型：`;
         const replyMsg = await ctx.reply(initialText, {
@@ -295,18 +316,32 @@ bot.command('zl', async (ctx) => {
                 ]
             }
         });
-        zlMessages.set(replyMsg.message_id, { targetUserId, targetFirstName, targetUsername, commandType: 'zl' });
+        zlMessages.set(replyMsg.message_id, { 
+            targetUserId, 
+            targetFirstName, 
+            targetUsername, 
+            commandType: 'zl',
+            chatId: chatId
+        });
+        console.log('已创建 zl 消息:', replyMsg.message_id, '目标用户:', targetUserId);
     } catch (error) {
         console.error('/zl command failed:', error);
+        ctx.reply('创建招聘申请失败，请稍后重试！');
     }
 });
 
+// ==================== 修复 /zj 指令 ====================
 bot.command('zj', async (ctx) => {
+    console.log('收到 /zj 命令', ctx.chat.id, ctx.from.id);
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) {
+        console.log('群组不在允许列表中:', chatId);
         return;
     }
+    
     const isUserAdmin = await isAdmin(chatId, ctx.from.id);
+    console.log('用户管理员状态:', isUserAdmin, '用户ID:', ctx.from.id);
+    
     if (!isUserAdmin) {
         try {
             const noPermMsg = await ctx.reply('❌ 🔒无权限！ /zj 只限汇盈国际负责人使用。');
@@ -316,29 +351,40 @@ bot.command('zj', async (ctx) => {
         }
         return;
     }
+    
     let targetUserId, targetFirstName, targetUsername;
     const replyTo = ctx.message.reply_to_message;
+    
     if (replyTo) {
         targetUserId = replyTo.from.id;
         targetFirstName = replyTo.from.first_name || '未知';
         targetUsername = replyTo.from.username ? `@${replyTo.from.username}` : '无用户名';
+        console.log('通过回复指定用户:', targetUserId, targetFirstName, targetUsername);
     } else {
         const match = ctx.message.text.match(/@(\w+)/);
         if (match) {
             const username = match[1];
             try {
-                const user = await bot.telegram.getChat(`@${username}`);
-                targetUserId = user.id;
-                targetFirstName = user.first_name || '未知';
+                await ctx.reply(`正在查找用户 @${username}...`);
+                const user = await bot.telegram.getChatMember(chatId, `@${username}`);
+                targetUserId = user.user.id;
+                targetFirstName = user.user.first_name || '未知';
                 targetUsername = `@${username}`;
+                console.log('通过@指定用户:', targetUserId, targetFirstName, targetUsername);
             } catch (error) {
-                return ctx.reply(`用户 @${username} 不存在！`);
+                console.error('获取用户信息失败:', error);
+                return ctx.reply(`用户 @${username} 不存在或不在本群！`);
             }
         } else {
-            return ctx.reply('👆请@用户或回复消息指定');
+            return ctx.reply('请回复用户消息或@用户名来指定目标用户！\n\n例如：\n- 回复用户消息后输入 /zj\n- 或直接输入 /zj @用户名');
         }
     }
-    if (!targetUserId) return ctx.reply('请指定用户！');
+    
+    if (!targetUserId) {
+        console.log('未找到目标用户ID');
+        return ctx.reply('无法获取用户信息，请重试！');
+    }
+    
     try {
         const initialText = `${INITIAL_TEXT}\n\n👤请点击下方按钮选择申请类型：`;
         const replyMsg = await ctx.reply(initialText, {
@@ -356,9 +402,17 @@ bot.command('zj', async (ctx) => {
                 ]
             }
         });
-        zlMessages.set(replyMsg.message_id, { targetUserId, targetFirstName, targetUsername, commandType: 'zj' });
+        zlMessages.set(replyMsg.message_id, { 
+            targetUserId, 
+            targetFirstName, 
+            targetUsername, 
+            commandType: 'zj',
+            chatId: chatId
+        });
+        console.log('已创建 zj 消息:', replyMsg.message_id, '目标用户:', targetUserId);
     } catch (error) {
         console.error('/zj command failed:', error);
+        ctx.reply('创建中介申请失败，请稍后重试！');
     }
 });
 
@@ -389,8 +443,8 @@ bot.command('lh', async (ctx) => {
         if (match) {
             const username = match[1];
             try {
-                const user = await bot.telegram.getChat(`@${username}`);
-                targetUserId = user.id;
+                const user = await bot.telegram.getChatMember(chatId, `@${username}`);
+                targetUserId = user.user.id;
                 userName = `@${username}`;
             } catch (error) {
                 return ctx.reply(`用户 @${username} 不存在！`);
@@ -435,8 +489,8 @@ bot.command('boss', async (ctx) => {
         if (match) {
             const username = match[1];
             try {
-                const user = await bot.telegram.getChat(`@${username}`);
-                targetUserId = user.id;
+                const user = await bot.telegram.getChatMember(chatId, `@${username}`);
+                targetUserId = user.user.id;
                 targetUser = username;
             } catch (error) {
                 return ctx.reply(`用户 @${username} 不存在！`);
@@ -496,8 +550,8 @@ bot.command('lg', async (ctx) => {
         if (match) {
             const username = match[1];
             try {
-                const user = await bot.telegram.getChat(`@${username}`);
-                targetUserId = user.id;
+                const user = await bot.telegram.getChatMember(chatId, `@${username}`);
+                targetUserId = user.user.id;
                 targetUser = username;
             } catch (error) {
                 return ctx.reply(`用户 @${username} 不存在！`);
@@ -580,7 +634,7 @@ bot.on('new_chat_members', async (ctx) => {
         }
 
         try {
-            // 修复：使用安全的文本格式，避免 Markdown 解析错误
+            // 使用安全的文本格式，避免 Markdown 解析错误
             const warningMsg = await ctx.reply(
                 `🚫这是汇盈国际官方对接群 \n\n` +
                 `👤欢迎 ${userName} ${userUsername}！\n\n` +
@@ -620,7 +674,7 @@ bot.on('text', async (ctx) => {
         const userName = ctx.from.first_name || '用户';
         const userUsername = ctx.from.username ? `@${ctx.from.username}` : '';
         
-        // 修复：使用安全的文本格式，避免 Markdown 解析错误
+        // 使用安全的文本格式，避免 Markdown 解析错误
         const warningMsg = await ctx.reply(
             `🚫这里是汇盈国际官方对接群🚫 \n\n` +
             `${userName} ${userUsername}，👤你还没有获得授权！🚫\n\n` +
@@ -665,7 +719,7 @@ bot.on('text', async (ctx) => {
     }
 });
 
-// ==================== 终极无敌 callback_query ====================
+// ==================== 修复 callback_query 中的 Markdown 错误 ====================
 bot.on('callback_query', async (ctx) => {
     const data = ctx.callbackQuery.data;
     const chatId = ctx.chat.id;
@@ -712,10 +766,25 @@ bot.on('callback_query', async (ctx) => {
             const instruction = commandType === 'zl'
                 ? '点击上方链接打开浏览器进行填写，填写时记住要录屏填写！填写好了发到此群！'
                 : '发给你的客户让客户打开浏览器进行填写，填写时记住要录屏填写！填写好了发到此群！';
-            const newText = `${INITIAL_TEXT}\n\n${userInfo}\n\n申请链接： [点击进入网站](${link})\n\n\`复制链接: ${link}\`\n\n${instruction}`;
-            await ctx.editMessageText(newText, { parse_mode: 'Markdown' });
-            await ctx.answerCbQuery(`已选择：${buttonKey}`);
-            zlMessages.delete(msgId);
+            
+            // 修复：使用 HTML 格式避免 Markdown 解析错误
+            const newText = `${INITIAL_TEXT}\n\n${userInfo}\n\n申请链接： <a href="${link}">点击进入网站</a>\n\n复制链接: ${link}\n\n${instruction}`;
+            
+            try {
+                await ctx.editMessageText(newText, { 
+                    parse_mode: 'HTML',
+                    disable_web_page_preview: false
+                });
+                await ctx.answerCbQuery(`已选择：${buttonKey}`);
+                zlMessages.delete(msgId);
+            } catch (error) {
+                console.error('编辑消息失败:', error);
+                // 如果 HTML 格式失败，尝试使用纯文本
+                const fallbackText = `${INITIAL_TEXT}\n\n${userInfo}\n\n申请链接：${link}\n\n复制链接: ${link}\n\n${instruction}`;
+                await ctx.editMessageText(fallbackText);
+                await ctx.answerCbQuery(`已选择：${buttonKey}`);
+                zlMessages.delete(msgId);
+            }
             return;
         }
 
@@ -735,7 +804,9 @@ bot.on('callback_query', async (ctx) => {
         }
     } catch (error) {
         console.error('callback_query 错误:', error);
-        try { await ctx.answerCbQuery('操作失败'); } catch {}
+        try { 
+            await ctx.answerCbQuery('操作失败，请重试'); 
+        } catch {}
     }
 });
 
@@ -766,13 +837,58 @@ expressApp.get('/', (req, res) => {
     res.send('Bot is alive!');
 });
 
-const PORT = process.env.PORT || 3000;
-expressApp.listen(PORT, () => {
-    console.log(`Express 服务器启动成功，监听端口 ${PORT}（防止 Render 休眠）`);
+const PORT = process.env.PORT || 10000;
+
+// 启动服务器和机器人
+async function startApp() {
+    try {
+        // 先启动 Express 服务器
+        expressApp.listen(PORT, () => {
+            console.log(`Express 服务器启动成功，监听端口 ${PORT}`);
+        });
+
+        // 等待一下确保服务器启动
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // 然后启动机器人
+        await bot.launch();
+        console.log('汇盈国际高级授权 Bot 启动成功！所有功能已修复并完美运行！');
+        botInstance = bot;
+
+    } catch (error) {
+        console.error('启动失败:', error);
+        // 如果是多实例冲突，等待后重试
+        if (error.response && error.response.error_code === 409) {
+            console.log('检测到多实例冲突，等待10秒后重试...');
+            await new Promise(resolve => setTimeout(resolve, 10000));
+            await bot.launch();
+            console.log('汇盈国际高级授权 Bot 重试启动成功！');
+            botInstance = bot;
+        } else {
+            throw error;
+        }
+    }
+}
+
+// 优雅关闭
+process.once('SIGINT', () => {
+    console.log('收到 SIGINT，正在关闭机器人...');
+    if (botInstance) {
+        botInstance.stop('SIGINT');
+    }
+    process.exit(0);
 });
 
-bot.launch();
-console.log('汇盈国际高级授权 Bot 启动成功！所有功能已修复并完美运行！');
+process.once('SIGTERM', () => {
+    console.log('收到 SIGTERM，正在关闭机器人...');
+    if (botInstance) {
+        botInstance.stop('SIGTERM');
+    }
+    process.exit(0);
+});
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// 启动应用
+startApp().catch(error => {
+    console.error('应用启动失败:', error);
+    process.exit(1);
+});
