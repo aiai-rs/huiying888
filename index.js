@@ -24,7 +24,7 @@ const BACKUP_GROUP_ID = -1003293673373;
 const WEB_APP_URL = 'https://huiying8.netlify.app';
 const AUTH_FILE = './authorized.json';
 
-// ==================== 2. 文案配置 (已删除未授权警告) ====================
+// ==================== 2. 文案配置 (已恢复您要求的警告文本) ====================
 const TEXTS = {
     'zh-CN': {
         pm_reply: "❌ 🔒本机器人只供汇盈国际内部使用，你没有权限访问。如果有疑问，请联系汇盈国际负责人授权。🚫🚫",
@@ -33,6 +33,11 @@ const TEXTS = {
                       "⚠️重要提醒：这是汇盈国际官方对接群，你还没有获得授权权限，请立即联系负责人进行授权！\n\n" +
                       "🔗联系方式：请联系汇盈国际负责人或等待通知。\n\n" +
                       "🚀汇盈国际 - 专业、安全、可靠💎",
+        // ★★★ 恢复的核心警告文案 ★★★
+        unauth_msg: "🚫这里是汇盈国际官方对接群🚫 \n\n" +
+                    "${name} ${username}，👤你还没有获得授权！🚫\n\n" +
+                    "💡立即联系负责人授权，否则无法发言。🚫\n\n" +
+                    "🚀汇盈国际 - 专业、安全、可靠🚀",
         auth_success: "✅ 已授权普通用户 ${name}！(只能使用 /hc)",
         agent_auth_msg: "路上只是要换车的请都使用 /zjkh 这个指令把链接发给你的兄弟，让你的兄弟拍照，（温馨提示：从链接可以一直使用）",
         photo_prompt: "为了保障你的安全换车前请拍照！ 换车一定要是上一个司机安排的哦，如果是请点击下方拍照，如果不是请联系负责人",
@@ -46,7 +51,7 @@ const TEXTS = {
         flight_msg: "上车前要拍照到此群核对\n\n请务必在登机前使用 /hc 拍照上传当前位置！\n\n汇盈国际 - 安全第一",
         btn_land: "负责人安排走小路",
         btn_flight: "坐飞机",
-        perm_deny: "❌ 🔒无权限！ /qc 只限汇盈国际负责人使用。",
+        perm_deny: "❌ 🔒无权限！ /qc 只限汇盈国际负责人使用。", // 您要求的通用拒绝文案
         agent_deny: "❌ 无权限！此指令仅限授权中介使用。\n普通用户请使用 /hc",
         lj_text: "🔗汇盈国际官方对接群链接 \n\n🔗点击下方按钮直接加入群！",
         qc_confirm: "⚠️ **恢复出厂设置**\n\n是否确认清空所有数据？",
@@ -84,6 +89,10 @@ const TEXTS = {
                       "⚠️重要提醒：這是匯盈國際官方對接群，你還沒有獲得授權權限，請立即聯繫負責人進行授權！\n\n" +
                       "🔗聯繫方式：請聯繫匯盈國際負責人或等待通知。\n\n" +
                       "🚀匯盈國際 - 專業、安全、可靠💎",
+        unauth_msg: "🚫這裡是匯盈國際官方對接群🚫 \n\n" +
+                    "${name} ${username}，👤你還沒有獲得授權！🚫\n\n" +
+                    "💡立即聯繫負責人授權，否則無法發言。🚫\n\n" +
+                    "🚀匯盈國際 - 專業、安全、可靠🚀",
         auth_success: "✅ 已授權普通用戶 ${name}！(只能使用 /hc)",
         agent_auth_msg: "路上只是要換車的請都使用 /zjkh 這個指令把鏈接發給你的兄弟，讓你的兄弟拍照，（溫馨提示：從鏈接可以一直使用）",
         photo_prompt: "為了保障你的安全換車前請拍照！ 換車一定要是上一個司機安排的哦，如果是請點擊下方拍照，如果不是請聯繫負責人",
@@ -259,6 +268,7 @@ bot.on('new_chat_members', async (ctx) => {
         saveAuth();
         try { await bot.telegram.restrictChatMember(ctx.chat.id, m.id, { permissions: { can_send_messages: false } }); } catch(e){}
         
+        // 发送警告，并记录MessageID以便后续回复授权
         const warning = await ctx.reply(t(ctx.chat.id, 'welcome_user', { name: m.first_name, username: m.username ? `@${m.username}` : '' })); 
         warningMessages.set(warning.message_id, { userId: m.id, userName: m.first_name, userUsername: m.username ? `@${m.username}` : '' });
     }
@@ -296,7 +306,7 @@ bot.action(['set_lang_cn', 'set_lang_tw'], async (ctx) => {
 // 菜单 /bz
 bot.command('bz', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return; // 仅管理员
 
     const chatId = ctx.chat.id;
     const helpText = `${t(chatId, 'menu_title')}\n\n` +
@@ -316,7 +326,7 @@ bot.command('bz', async (ctx) => {
 // 恢复出厂 /qc
 bot.command('qc', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny')); // 仅管理员
 
     await ctx.reply(t(ctx.chat.id, 'qc_confirm'), {
         reply_markup: {
@@ -352,7 +362,7 @@ bot.action('qc_no', async (ctx) => {
 // 群链接 /lj
 bot.command('lj', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny')); // 仅管理员
     
     try {
         const link = await bot.telegram.exportChatInviteLink(ctx.chat.id);
@@ -365,19 +375,22 @@ bot.command('lj', async (ctx) => {
 // 刷新链接 /sx
 bot.command('sx', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny')); // 仅管理员
     getOrRefreshToken(ctx.chat.id, true);
     ctx.reply(t(ctx.chat.id, 'sx_done'), { parse_mode: 'Markdown' });
 });
 
-// 换车 /hc
+// 换车 /hc (用户/中介/管理员)
 bot.command('hc', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     const userId = ctx.from.id;
     const role = authorizedUsers.get(userId);
     const isAdminUser = await isAdmin(ctx.chat.id, userId);
     
-    if (!isAdminUser && role !== 'user' && role !== 'agent') return; 
+    // 如果不是管理员且没授权，弹出无权限提示
+    if (!isAdminUser && role !== 'user' && role !== 'agent') {
+        return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+    }
 
     const chatId = ctx.chat.id;
     const token = getOrRefreshToken(chatId);
@@ -388,7 +401,7 @@ bot.command('hc', async (ctx) => {
     });
 });
 
-// 中介链接 /zjkh
+// 中介链接 /zjkh (仅中介/管理员)
 bot.command('zjkh', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     const userId = ctx.from.id;
@@ -404,10 +417,10 @@ bot.command('zjkh', async (ctx) => {
     ctx.reply(`${t(chatId, 'link_title')}\n\n${t(chatId, 'link_copy')}\n${link}`, { disable_web_page_preview: true });
 });
 
-// Boss / boss
+// Boss / boss (仅管理员)
 bot.command('boss', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
     if (!ctx.message.reply_to_message) return;
 
     const chatId = ctx.chat.id;
@@ -420,10 +433,10 @@ bot.command('boss', async (ctx) => {
     });
 });
 
-// 龙哥 / lg
+// 龙哥 / lg (仅管理员)
 bot.command('lg', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
     if (!ctx.message.reply_to_message) return;
 
     const chatId = ctx.chat.id;
@@ -436,10 +449,10 @@ bot.command('lg', async (ctx) => {
     });
 });
 
-// 招聘链接逻辑
+// 招聘链接逻辑 /zl (仅管理员)
 async function handleLinkCommand(ctx, type) {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
     
     const chatId = ctx.chat.id;
     const msg = t(chatId, 'zl_msg');
@@ -463,9 +476,10 @@ async function handleLinkCommand(ctx, type) {
 bot.command('zl', (ctx) => handleLinkCommand(ctx, 'zl'));
 bot.command('zj', (ctx) => handleLinkCommand(ctx, 'zj'));
 
+// 踢人 /lh (仅管理员)
 bot.command('lh', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
     if (!ctx.message.reply_to_message) return;
     try {
         await bot.telegram.banChatMember(ctx.chat.id, ctx.message.reply_to_message.from.id);
@@ -502,18 +516,30 @@ bot.on('callback_query', async (ctx) => {
     try { await ctx.answerCbQuery(); } catch(e){}
 });
 
-// 文本消息
+// 文本消息 (处理未授权发言 & 授权逻辑)
 bot.on('text', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     const userId = ctx.from.id;
     const role = authorizedUsers.get(userId);
     const isAdminUser = await isAdmin(ctx.chat.id, userId);
 
+    // 1. 如果不是管理员，也不是授权用户(user)或中介(agent)
     if (!isAdminUser && role !== 'user' && role !== 'agent') {
-        try { await ctx.deleteMessage(); } catch(e){}
-        return; // 直接返回，不发送警告
+        try { await ctx.deleteMessage(); } catch(e){} // 删消息
+        const chatId = ctx.chat.id;
+        
+        // ★★★ 核心修复：发送“未授权”警告，以便管理员回复授权 ★★★
+        const name = ctx.from.first_name;
+        const username = ctx.from.username ? `@${ctx.from.username}` : '';
+        const msg = t(chatId, 'unauth_msg', { name, username });
+        const warning = await ctx.reply(msg);
+        
+        // 记录这条警告，等待管理员回复
+        warningMessages.set(warning.message_id, { userId: ctx.from.id, userName: ctx.from.first_name });
+        return;
     }
 
+    // 2. 管理员授权逻辑
     if (isAdminUser && ctx.message.reply_to_message) {
         const text = ctx.message.text.trim();
         const replyId = ctx.message.reply_to_message.message_id;
