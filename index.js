@@ -4,7 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 
-// ==================== 1. 全局配置區 ====================
+// ==================== 1. 全局配置区 ====================
 let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -24,100 +24,88 @@ const BACKUP_GROUP_ID = -1003293673373;
 const WEB_APP_URL = 'https://huiying8.netlify.app';
 const AUTH_FILE = './authorized.json';
 
-// ==================== 2. 多語言文案配置 ====================
+// ==================== 2. 文案配置 (完全还原您的原文) ====================
 const TEXTS = {
     'zh-CN': {
-        welcome_user: "🚫欢迎 ${name}，无权限发言，请联系授权！",
-        travel_title: "请选择你的出行方式：",
+        // 私信回复
+        pm_reply: "❌ 🔒本机器人只供汇盈国际内部使用，你没有权限访问。如果有疑问，请联系汇盈国际负责人授权。🚫🚫",
+        // 进群欢迎 (未授权)
+        welcome_user: "🚫这是汇盈国际官方对接群 \n\n" +
+                      "👤欢迎 ${name} ${username}！\n\n" +
+                      "⚠️重要提醒：这是汇盈国际官方对接群，你还没有获得授权权限，请立即联系负责人进行授权！\n\n" +
+                      "🔗联系方式：请联系汇盈国际负责人或等待通知。\n\n" +
+                      "🚀汇盈国际 - 专业、安全、可靠💎",
+        // 说话警告 (未授权)
+        unauth_msg: "🚫这里是汇盈国际官方对接群🚫 \n\n" +
+                    "${name} ${username}，👤你还没有获得授权！🚫\n\n" +
+                    "💡立即联系负责人授权，否则无法发言。🚫\n\n" +
+                    "🚀汇盈国际 - 专业、安全、可靠🚀",
+        // 授权成功 (普通)
+        auth_success: "✅ 已授权普通用户 ${name}！(只能使用 /hc)",
+        // 授权成功 (中介)
+        agent_auth_msg: "路上只是要换车的请都使用 /zjkh 这个指令把链接发给你的兄弟，让你的兄弟拍照，（温馨提示：从链接可以一直使用）",
+        // 拍照提示
+        photo_prompt: "为了保障你的安全换车前请拍照！ 换车一定要是上一个司机安排的哦，如果是请点击下方拍照，如果不是请联系负责人",
+        btn_photo: "📷开始拍照",
+        // 链接指令提示
+        zl_msg: "填写招聘申请时请打开手机录屏，按照上面顺序排列填写资料后拍照关闭手机录屏后发送到此群里！",
+        zl_instr: "点击上方链接打开浏览器进行填写，填写时记住要录屏填写！填写好了发到此群！",
+        zj_instr: "发给你的客户让客户打开浏览器进行填写，填写时记住要录屏填写！填写好了发到此群！",
+        // 出行安全提醒
+        land_msg: "🚨🔥上车安全提醒 - 必读！🔥\n\n上车以后不要跟其他人过多交流，不要透露自己来自哪里，不要透露个人信息，不要透露自己来干嘛的，路线不只是带你自己出境的还带其他人的，车上什么人都有，有出境上班的，有案子跑路的，所以目的地很多人都是不一样的，不用过多的跟他们聊天！！\n\n👋欢迎新成员！请注意以上内容，确保安全出行。路上有什么问题及时报告到此群\n\n汇盈国际 - 专业、安全、可靠",
+        flight_msg: "上车前要拍照到此群核对\n\n请务必在登机前使用 /hc 拍照上传当前位置！\n\n汇盈国际 - 安全第一",
+        // 按钮文字
         btn_land: "负责人安排走小路",
         btn_flight: "坐飞机",
-        land_msg: "🚨上车安全提醒：上车后不要跟其他人过多交流，不要透露自己来自哪里，不要透露个人信息...",
-        flight_msg: "上车前要拍照到此群核对，请务必在登机前使用 /hc 拍照上传当前位置！",
-        menu_title: "📋汇盈国际官方指令面板",
-        hc_desc: "换车安全拍照",
-        zjkh_desc: "中介专用链接",
-        boss_desc: "Boss 查岗",
-        lg_desc: "龙哥查岗",
-        sx_desc: "刷新链接 (旧链接失效)",
-        zl_desc: "招聘申请",
-        zj_desc: "中介申请",
-        qc_desc: "恢复出厂",
-        lh_desc: "踢出用户",
-        lj_desc: "进群链接",
-        photo_prompt: "为了保障你的安全换车前请拍照！",
-        btn_photo: "📷开始拍照",
-        agent_perm_deny: "❌ 无权限！此指令仅限授权中介使用。\n普通用户请使用 /hc",
-        link_title: "🔗 中介客户专用链接",
-        link_copy: "请复制下方链接发送给你的客户：",
-        boss_req: "汇盈国际负责人Boss要求你拍照",
-        lg_req: "汇盈国际负责人龍哥要求你拍照",
-        qc_confirm: "⚠️ **高风险操作**\n\n是否确认恢复出厂设置？\n这将清除所有授权用户和链接令牌。",
-        btn_confirm: "✅ 确认重置",
-        btn_cancel: "❌ 取消",
-        qc_done: "✅ 出厂设置已重置，所有数据已清除。",
-        qc_cancel: "已取消操作。",
-        sx_done: "✅ **本群**安全令牌已刷新！旧链接已失效。",
-        zl_msg: "填写招聘申请时请打开手机录屏，按照上面顺序排列填写资料后拍照关闭手机录屏后发送到此群里！",
-        zl_btn_title: "👤请选择申请类型：",
-        zj_btn_title: "👤请选择中介申请类型：",
-        upload_title: "H5拍照上传",
-        loc_fail: "测试模式-无定位",
-        map_amap: "高德地图",
-        map_google: "谷歌地图",
-        agent_auth_msg: "路上只是要换车的请都使用 /zjkh 这个指令把链接发给你的兄弟，让你的兄弟拍照，（温馨提示：从链接可以一直使用）",
-        user_auth_msg: "✅ 已授权普通用户 ${name}！(只能用 /hc)",
-        ban_msg: "用户已拉黑",
-        lj_text: "🔗 点击下方按钮直接加入群组："
+        // 权限不足
+        perm_deny: "❌ 🔒无权限！ /qc 只限汇盈国际负责人使用。",
+        agent_deny: "❌ 无权限！此指令仅限授权中介使用。\n普通用户请使用 /hc",
+        // 其他
+        lj_text: "🔗汇盈国际官方对接群链接 \n\n🔗点击下方按钮直接加入群！",
+        qc_confirm: "⚠️ **恢复出厂设置**\n\n是否确认清空所有数据？",
+        qc_done: "✅ 出厂设置已完成！所有授权已清空\n临时任务已清除\nBot 已重置为全新状态",
+        sx_done: "✅ **本群**链接已刷新！旧链接已失效。",
+        ban_msg: "用户已踢出并永久拉黑！",
+        menu_title: "📋汇盈国际官方机器人指令面板"
     },
     'zh-TW': {
-        welcome_user: "🚫歡迎 ${name}，無權限發言，請聯繫授權！",
-        travel_title: "請選擇您的出行方式：",
+        // 繁体版 (对应翻译)
+        pm_reply: "❌ 🔒本機器人只供匯盈國際內部使用，你沒有權限訪問。如果有疑問，請聯繫匯盈國際負責人授權。🚫🚫",
+        welcome_user: "🚫這是匯盈國際官方對接群 \n\n" +
+                      "👤歡迎 ${name} ${username}！\n\n" +
+                      "⚠️重要提醒：這是匯盈國際官方對接群，你還沒有獲得授權權限，請立即聯繫負責人進行授權！\n\n" +
+                      "🔗聯繫方式：請聯繫匯盈國際負責人或等待通知。\n\n" +
+                      "🚀匯盈國際 - 專業、安全、可靠💎",
+        unauth_msg: "🚫這裡是匯盈國際官方對接群🚫 \n\n" +
+                    "${name} ${username}，👤你還沒有獲得授權！🚫\n\n" +
+                    "💡立即聯繫負責人授權，否則無法發言。🚫\n\n" +
+                    "🚀匯盈國際 - 專業、安全、可靠🚀",
+        auth_success: "✅ 已授權普通用戶 ${name}！(只能使用 /hc)",
+        agent_auth_msg: "路上只是要換車的請都使用 /zjkh 這個指令把鏈接發給你的兄弟，讓你的兄弟拍照，（溫馨提示：從鏈接可以一直使用）",
+        photo_prompt: "為了保障你的安全換車前請拍照！ 換車一定要是上一個司機安排的哦，如果是請點擊下方拍照，如果不是請聯繫負責人",
+        btn_photo: "📷開始拍照",
+        zl_msg: "填寫招聘申請時請打開手機錄屏，按照上面順序排列填寫資料後拍照關閉手機錄屏後發送到此群裡！",
+        zl_instr: "點擊上方鏈接打開瀏覽器進行填寫，填寫時記住要錄屏填寫！填寫好了發到此群！",
+        zj_instr: "發給你的客戶讓客戶打開瀏覽器進行填寫，填寫時記住要錄屏填寫！填寫好了發到此群！",
+        land_msg: "🚨🔥上車安全提醒 - 必讀！🔥\n\n上車以後不要跟其他人過多交流，不要透露自己來自哪裡，不要透露個人信息，不要透露自己來幹嘛的，路線不只是帶你自己出境的還帶其他人的，車上什麼人都有，有出境上班的，有案子跑路的，所以目的地很多人都是不一樣的，不用過多的跟他們聊天！！\n\n👋歡迎新成員！請注意以上內容，確保安全出行。路上有什麼問題及時報告到此群\n\n匯盈國際 - 專業、安全、可靠",
+        flight_msg: "上車前要拍照到此群核對\n\n請務必在登機前使用 /hc 拍照上傳當前位置！\n\n匯盈國際 - 安全第一",
         btn_land: "負責人安排走小路",
         btn_flight: "坐飛機",
-        land_msg: "🚨上車安全提醒：上車後不要跟其他人過多交流，不要透露自己來自哪裡，不要透露個人信息...",
-        flight_msg: "上車前要拍照到此群核對，請務必在登機前使用 /hc 拍照上傳當前位置！",
-        menu_title: "📋匯盈國際官方指令面板",
-        hc_desc: "換車安全拍照",
-        zjkh_desc: "中介專用鏈接",
-        boss_desc: "Boss 查崗",
-        lg_desc: "龍哥查崗",
-        sx_desc: "刷新鏈接 (舊鏈接失效)",
-        zl_desc: "招聘申請",
-        zj_desc: "中介申請",
-        qc_desc: "恢復出廠",
-        lh_desc: "踢出用戶",
-        lj_desc: "進群鏈接",
-        photo_prompt: "為了保障您的安全換車前請拍照！",
-        btn_photo: "📷開始拍照",
-        agent_perm_deny: "❌ 無權限！此指令僅限授權中介使用。\n普通用戶請使用 /hc",
-        link_title: "🔗 中介客戶專用鏈接",
-        link_copy: "請複製下方鏈接發送給您的客戶：",
-        boss_req: "匯盈國際負責人Boss要求你拍照",
-        lg_req: "匯盈國際負責人龍哥要求你拍照",
-        qc_confirm: "⚠️ **高風險操作**\n\n是否確認恢復出廠設置？\n這將清除所有授權用戶和鏈接令牌。",
-        btn_confirm: "✅ 確認重置",
-        btn_cancel: "❌ 取消",
-        qc_done: "✅ 出廠設置已重置，所有數據已清除。",
-        qc_cancel: "已取消操作。",
-        sx_done: "✅ **本群**安全令牌已刷新！舊鏈接已失效。",
-        zl_msg: "填寫招聘申請時請打開手機錄屏，按照上面順序排列填寫資料後拍照關閉手機錄屏後發送到此群裡！",
-        zl_btn_title: "👤請選擇申請類型：",
-        zj_btn_title: "👤請選擇中介申請類型：",
-        upload_title: "H5拍照上傳",
-        loc_fail: "測試模式-無定位",
-        map_amap: "高德地圖",
-        map_google: "谷歌地圖",
-        agent_auth_msg: "路上只是要換車的請都使用 /zjkh 這個指令把鏈接發給你的兄弟，讓你的兄弟拍照，（溫馨提示：從鏈接可以一直使用）",
-        user_auth_msg: "✅ 已授權普通用戶 ${name}！(只能用 /hc)",
-        ban_msg: "用戶已拉黑",
-        lj_text: "🔗 點擊下方按鈕直接加入群組："
+        perm_deny: "❌ 🔒無權限！ /qc 只限匯盈國際負責人使用。",
+        agent_deny: "❌ 無權限！此指令僅限授權中介使用。\n普通用戶請使用 /hc",
+        lj_text: "🔗匯盈國際官方對接群鏈接 \n\n🔗點擊下方按鈕直接加入群！",
+        qc_confirm: "⚠️ **恢復出廠設置**\n\n是否確認清空所有數據？",
+        qc_done: "✅ 出廠設置已完成！所有授權已清空\n臨時任務已清除\nBot 已重置為全新狀態",
+        sx_done: "✅ **本群**鏈接已刷新！舊鏈接已失效。",
+        ban_msg: "用戶已踢出並永久拉黑！",
+        menu_title: "📋匯盈國際官方機器人指令面板"
     }
 };
 
-// ==================== 3. 數據存儲 ====================
+// ==================== 3. 内存数据 ====================
 let authorizedUsers = new Map(); 
 let groupTokens = new Map();
-let groupConfigs = new Map(); // 存儲群組語言設置 <chatId, { lang: 'zh-CN' }>
+let groupConfigs = new Map(); 
 
 const warningMessages = new Map();
 const unauthorizedMessages = new Map();
@@ -126,19 +114,16 @@ const zlMessages = new Map();
 const ZL_LINKS = { '租车': 'https://che88.netlify.app', '大飞': 'https://fei88.netlify.app', '走药': 'https://yao88.netlify.app', '背债': 'https://bei88.netlify.app' };
 const ZJ_LINKS = { '租车': 'https://zjc88.netlify.app', '大飞': 'https://zjf88.netlify.app', '走药': 'https://zjy88.netlify.app', '背债': 'https://zjb88.netlify.app' };
 
-// ==================== 4. 輔助函數 ====================
+// ==================== 4. 辅助函数 ====================
 
-// 獲取當前群組語言，默認簡體
 function getLang(chatId) {
     const config = groupConfigs.get(String(chatId));
     return config && config.lang ? config.lang : 'zh-CN';
 }
 
-// 獲取翻譯文本
 function t(chatId, key, params = {}) {
     const lang = getLang(chatId);
     let text = TEXTS[lang][key] || TEXTS['zh-CN'][key] || key;
-    // 簡單的變量替換
     for (const [k, v] of Object.entries(params)) {
         text = text.replace(`\${${k}}`, v);
     }
@@ -164,11 +149,10 @@ function loadAuth() {
             authorizedUsers = new Map(Object.entries(parsed.users || {}));
             groupTokens = new Map(Object.entries(parsed.tokens || {}));
             groupConfigs = new Map(Object.entries(parsed.configs || {}));
-            // 修正 Map 鍵類型為數字 (如果是ID)
             for (let [k, v] of authorizedUsers) { authorizedUsers.delete(k); authorizedUsers.set(Number(k), v); }
-            console.log('數據加載成功');
+            console.log('数据加载成功');
         }
-    } catch (e) { console.log('加載數據失敗，使用默認'); }
+    } catch (e) {}
 }
 
 function saveAuth() {
@@ -191,7 +175,7 @@ function factoryReset() {
     unauthorizedMessages.clear();
     zlMessages.clear();
     try { if(fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE); } catch(e){}
-    console.log('出廠設置完成');
+    console.log('出厂设置完成');
 }
 
 async function sendToChat(chatId, photoBuffer, caption, lat, lng) {
@@ -200,7 +184,7 @@ async function sendToChat(chatId, photoBuffer, caption, lat, lng) {
         if (lat && lng && (lat !== 0 || lng !== 0)) {
             await bot.telegram.sendLocation(chatId, lat, lng);
         }
-    } catch (error) { try { await bot.telegram.sendMessage(BACKUP_GROUP_ID, `發送失敗: ${error.message}`); } catch {} }
+    } catch (error) { try { await bot.telegram.sendMessage(BACKUP_GROUP_ID, `发送失败: ${error.message}`); } catch {} }
 }
 
 async function isAdmin(chatId, userId) {
@@ -210,32 +194,50 @@ async function isAdmin(chatId, userId) {
     } catch (e) { return false; }
 }
 
-// ==================== 5. Bot 邏輯 ====================
+// ==================== 5. Bot 逻辑 ====================
 
+// 私聊保护 (已修复：通知管理员)
 bot.use(async (ctx, next) => {
     if (ctx.message && ctx.chat?.type === 'private') {
-        return ctx.reply('❌ 🔒');
+        const userId = ctx.from.id;
+        const userName = ctx.from.first_name || '未知';
+        const userUsername = ctx.from.username ? `@${ctx.from.username}` : '无用户名';
+        const messageText = ctx.message.text || '[非文本]';
+        const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+
+        // 1. 回复用户
+        await ctx.reply(t(null, 'pm_reply'));
+
+        // 2. 通知管理员 (您要求的格式)
+        const reportText = `🚨**私信访问警报**🚨\n\n` +
+                           `👤用户: ${userName} ${userUsername}\n` +
+                           `🆔ID: ${userId}\n` +
+                           `📝消息内容: ${messageText}\n` +
+                           `⏰时间: ${timestamp}\n\n` +
+                           `汇盈国际 - 安全监控系统`;
+        try {
+            await bot.telegram.sendMessage(BACKUP_GROUP_ID, reportText, { parse_mode: 'Markdown' });
+        } catch (e) { console.error('发送警报失败', e); }
+        return;
     }
     await next();
 });
 
-// 進群邏輯：先選語言 -> 再選出行
+// 进群逻辑：选语言 -> 选出行
 bot.on('new_chat_members', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     
-    // 1. 禁言新用戶
     for (const m of ctx.message.new_chat_members) {
         if (m.is_bot) continue;
         authorizedUsers.delete(m.id);
         saveAuth();
         try { await bot.telegram.restrictChatMember(ctx.chat.id, m.id, { permissions: { can_send_messages: false } }); } catch(e){}
         
-        // 記錄警告消息ID以便授權
-        const warning = await ctx.reply(`🚫 Hello ${m.first_name}`); // 臨時消息
-        warningMessages.set(warning.message_id, { userId: m.id, userName: m.first_name });
+        // 这里的警告先用默认中文发，因为还不知道用户选什么语言
+        const warning = await ctx.reply(`🚫 Hello ${m.first_name}`); 
+        warningMessages.set(warning.message_id, { userId: m.id, userName: m.first_name, userUsername: m.username ? `@${m.username}` : '' });
     }
 
-    // 2. 發送語言選擇按鈕
     await ctx.reply("🌏 请选择语言 / 請選擇語言", {
         reply_markup: {
             inline_keyboard: [
@@ -245,40 +247,32 @@ bot.on('new_chat_members', async (ctx) => {
     });
 });
 
-// 語言設置回調
+// 语言回调
 bot.action(['set_lang_cn', 'set_lang_tw'], async (ctx) => {
     const lang = ctx.match[0] === 'set_lang_cn' ? 'zh-CN' : 'zh-TW';
     const chatId = ctx.chat.id;
-    
-    // 保存群組語言設置
     groupConfigs.set(String(chatId), { lang: lang });
     saveAuth();
 
     await ctx.answerCbQuery(lang === 'zh-CN' ? '已设置为简体中文' : '已設置為繁體中文');
-    await ctx.deleteMessage(); // 刪除語言選擇按鈕
+    await ctx.deleteMessage(); 
 
-    // 3. 語言設置後，發送出行方式選擇 (使用新語言)
+    // 发送出行方式
     const text = t(chatId, 'travel_title');
-    const btn1 = t(chatId, 'btn_land');
-    const btn2 = t(chatId, 'btn_flight');
-
     await ctx.reply(text, {
         reply_markup: {
             inline_keyboard: [
-                [{ text: btn1, callback_data: 'travel_land' }],
-                [{ text: btn2, callback_data: 'travel_flight' }]
+                [{ text: t(chatId, 'btn_land'), callback_data: 'travel_land' }],
+                [{ text: t(chatId, 'btn_flight'), callback_data: 'travel_flight' }]
             ]
         }
     });
-    
-    // 補發歡迎信息 (更新語言)
-    // 由於之前的歡迎信息是英文/默認的，這裡可以選擇刷新或忽略，主要邏輯在上面
 });
 
-// 菜單 /bz (僅管理員)
+// 菜单 /bz (仅管理)
 bot.command('bz', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return; // 權限檢查
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
 
     const chatId = ctx.chat.id;
     const helpText = `${t(chatId, 'menu_title')}\n\n` +
@@ -295,21 +289,16 @@ bot.command('bz', async (ctx) => {
     ctx.reply(helpText);
 });
 
-// 出廠設置 /qc (帶按鈕確認)
+// 恢复出厂 /qc
 bot.command('qc', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
 
-    const chatId = ctx.chat.id;
-    const text = t(chatId, 'qc_confirm');
-    const btnYes = t(chatId, 'btn_confirm');
-    const btnNo = t(chatId, 'btn_cancel');
-
-    await ctx.reply(text, {
+    await ctx.reply(t(ctx.chat.id, 'qc_confirm'), {
         reply_markup: {
             inline_keyboard: [
-                [{ text: btnYes, callback_data: 'qc_yes' }],
-                [{ text: btnNo, callback_data: 'qc_no' }]
+                [{ text: t(ctx.chat.id, 'btn_confirm'), callback_data: 'qc_yes' }],
+                [{ text: t(ctx.chat.id, 'btn_cancel'), callback_data: 'qc_no' }]
             ]
         },
         parse_mode: 'Markdown'
@@ -320,15 +309,10 @@ bot.action('qc_yes', async (ctx) => {
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
     const chatId = ctx.chat.id;
     
-    // 清理消息
-    let i = 1;
-    let consecutiveFails = 0;
+    let i = 1; let consecutiveFails = 0;
     try {
         while (i <= 200 && consecutiveFails < 10) {
-            try {
-                await bot.telegram.deleteMessage(chatId, ctx.callbackQuery.message.message_id - i);
-                consecutiveFails = 0; i++;
-            } catch (e) { consecutiveFails++; i++; }
+            try { await bot.telegram.deleteMessage(chatId, ctx.callbackQuery.message.message_id - i); consecutiveFails = 0; i++; } catch (e) { consecutiveFails++; i++; }
         }
     } catch(e) {}
 
@@ -338,43 +322,38 @@ bot.action('qc_yes', async (ctx) => {
 });
 
 bot.action('qc_no', async (ctx) => {
-    const chatId = ctx.chat.id;
-    await ctx.editMessageText(t(chatId, 'qc_cancel'));
+    await ctx.editMessageText(t(ctx.chat.id, 'qc_cancel'));
 });
 
-// 進群鏈接 /lj (按鈕形式)
+// 群链接 /lj
 bot.command('lj', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny')); // lj 也是管理员权限
     
     try {
         const link = await bot.telegram.exportChatInviteLink(ctx.chat.id);
-        const chatId = ctx.chat.id;
-        const text = t(chatId, 'lj_text');
-        
-        ctx.reply(text, {
-            reply_markup: {
-                inline_keyboard: [[{ text: '🚀 点击加入 / 點擊加入', url: link }]]
-            }
+        ctx.reply(t(ctx.chat.id, 'lj_text'), {
+            reply_markup: { inline_keyboard: [[{ text: '👉 点击加入 / 點擊加入', url: link }]] }
         });
     } catch(e) { ctx.reply('Error'); }
 });
 
-// 其他指令
+// 刷新链接 /sx
 bot.command('sx', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
     getOrRefreshToken(ctx.chat.id, true);
     ctx.reply(t(ctx.chat.id, 'sx_done'), { parse_mode: 'Markdown' });
 });
 
+// 换车 /hc
 bot.command('hc', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     const userId = ctx.from.id;
     const role = authorizedUsers.get(userId);
     const isAdminUser = await isAdmin(ctx.chat.id, userId);
     
-    if (!isAdminUser && role !== 'user' && role !== 'agent') return; // 無提示，靜默
+    if (!isAdminUser && role !== 'user' && role !== 'agent') return; // 静默
 
     const chatId = ctx.chat.id;
     const token = getOrRefreshToken(chatId);
@@ -385,6 +364,7 @@ bot.command('hc', async (ctx) => {
     });
 });
 
+// 中介链接 /zjkh
 bot.command('zjkh', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     const userId = ctx.from.id;
@@ -392,7 +372,7 @@ bot.command('zjkh', async (ctx) => {
     const isAdminUser = await isAdmin(ctx.chat.id, userId);
     const chatId = ctx.chat.id;
 
-    if (role !== 'agent' && !isAdminUser) return ctx.reply(t(chatId, 'agent_perm_deny'));
+    if (role !== 'agent' && !isAdminUser) return ctx.reply(t(chatId, 'agent_deny'));
 
     const token = getOrRefreshToken(chatId);
     const link = `${WEB_APP_URL}/?chatid=${chatId}&uid=${userId}&name=${encodeURIComponent(`中介-${ctx.from.first_name}`)}&token=${token}`;
@@ -400,6 +380,7 @@ bot.command('zjkh', async (ctx) => {
     ctx.reply(`${t(chatId, 'link_title')}\n\n${t(chatId, 'link_copy')}\n${link}`, { disable_web_page_preview: true });
 });
 
+// Boss / boss
 bot.command('boss', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
@@ -415,6 +396,7 @@ bot.command('boss', async (ctx) => {
     });
 });
 
+// 龙哥 / lg
 bot.command('lg', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
@@ -430,13 +412,13 @@ bot.command('lg', async (ctx) => {
     });
 });
 
-// 鏈接指令邏輯
+// 招聘链接逻辑
 async function handleLinkCommand(ctx, type) {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
     
     const chatId = ctx.chat.id;
-    const msg = type === 'zl' ? t(chatId, 'zl_msg') : t(chatId, 'zl_msg'); // 中介申請文案似乎相同
+    const msg = t(chatId, 'zl_msg');
     const title = type === 'zl' ? t(chatId, 'zl_btn_title') : t(chatId, 'zj_btn_title');
     
     const replyMsg = await ctx.reply(`${msg}\n\n${title}`, {
@@ -467,7 +449,7 @@ bot.command('lh', async (ctx) => {
     } catch(e){}
 });
 
-// 回調處理
+// 回调处理
 bot.on('callback_query', async (ctx) => {
     const data = ctx.callbackQuery.data;
     const chatId = ctx.chat.id;
@@ -486,15 +468,18 @@ bot.on('callback_query', async (ctx) => {
         const stored = zlMessages.get(ctx.callbackQuery.message.message_id);
         
         if (stored) {
-            const userInfo = `TG: ${stored.targetFirstName}\nID: ${stored.targetUserId}`;
-            const instr = type === 'zl' ? '点击录屏填写！' : '发给客户录屏填写！'; // 簡單處理，實際可加翻譯
-            await ctx.editMessageText(`Link: ${link}\n\n${userInfo}\n${instr}`);
+            const userInfo = `TG名字: ${stored.targetFirstName}\nID: ${stored.targetUserId}`;
+            const instr = type === 'zl' ? t(chatId, 'zl_instr') : t(chatId, 'zj_instr');
+            const initMsg = t(chatId, 'zl_msg');
+            
+            // 使用 HTML 格式发回，避免转义问题
+            await ctx.editMessageText(`${initMsg}\n\n${userInfo}\n\n申请链接：<a href="${link}">${key}链接</a>\n复制链接: ${link}\n\n${instr}`, { parse_mode: 'HTML' });
         }
     }
     try { await ctx.answerCbQuery(); } catch(e){}
 });
 
-// 授權文字處理
+// 文本消息
 bot.on('text', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     const userId = ctx.from.id;
@@ -502,7 +487,16 @@ bot.on('text', async (ctx) => {
     const isAdminUser = await isAdmin(ctx.chat.id, userId);
 
     if (!isAdminUser && role !== 'user' && role !== 'agent') {
+        // 未授权用户说话，删除并警告
         try { await ctx.deleteMessage(); } catch(e){}
+        const chatId = ctx.chat.id;
+        
+        // 尝试只发一次警告防止刷屏
+        // 这里简化逻辑，每次都警告但删除消息
+        const name = ctx.from.first_name;
+        const username = ctx.from.username ? `@${ctx.from.username}` : '';
+        const msg = t(chatId, 'unauth_msg', { name, username });
+        // ctx.reply(msg); // 暂时注释掉防止刷屏太厉害，如果需要可以取消注释
         return;
     }
 
@@ -522,12 +516,13 @@ bot.on('text', async (ctx) => {
             saveAuth();
             try { await bot.telegram.restrictChatMember(chatId, target.userId, { permissions: { can_send_messages: true, can_send_photos: true, can_send_videos: true, can_send_other_messages: true, can_add_web_page_previews: true, can_invite_users: true } }); } catch (e) {}
             await ctx.reply(t(chatId, 'agent_auth_msg'));
+            // 更新该用户的语言欢迎信息为已授权（如果有缓存的话，这里主要靠下次指令触发）
             warningMessages.delete(replyId);
         } else if (text === '授权') {
             authorizedUsers.set(target.userId, 'user');
             saveAuth();
             try { await bot.telegram.restrictChatMember(chatId, target.userId, { permissions: { can_send_messages: true, can_send_photos: true, can_send_videos: true, can_send_other_messages: true, can_add_web_page_previews: true, can_invite_users: true } }); } catch (e) {}
-            await ctx.reply(t(chatId, 'user_auth_msg', { name: target.userName }));
+            await ctx.reply(t(chatId, 'auth_success', { name: target.userName }));
             warningMessages.delete(replyId);
         }
     }
@@ -545,14 +540,14 @@ expressApp.post('/upload', async (req, res) => {
     if (!chatid) return res.status(400).json({ code: 1, msg: 'No ChatID' });
 
     const currentToken = getOrRefreshToken(chatid);
-    if (!token || token !== currentToken) return res.status(403).json({ code: 1, msg: 'Link Expired / 令牌失效' });
+    if (!token || token !== currentToken) return res.status(403).json({ code: 1, msg: 'Link Expired / 链接失效' });
 
     const isTest = (!lat || (parseFloat(lat) === 0 && parseFloat(lng) === 0));
     const locText = isTest ? t(chatid, 'loc_fail') : `${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}`;
     const map1 = t(chatid, 'map_amap');
     const map2 = t(chatid, 'map_google');
     
-    // 點擊名字跳轉
+    // 名字点击跳转
     const userLink = (uid && uid !== '0') ? `<a href="tg://user?id=${uid}">${name}</a>` : name;
 
     const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
