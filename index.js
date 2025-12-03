@@ -36,7 +36,7 @@ const TEXTS = {
                     "💡立即联系负责人授权，否则无法发言。🚫\n\n" +
                     "🚀汇盈国际 - 专业、安全、可靠🚀",
         auth_success: "✅ 已授权 ✅ 用户 ${name}！(只能使用 /hc)",
-        agent_auth_msg: "✅ 已授权中介 ✅ 告知：路上只要是换车的请都使用 /zjkh 这个指令把链接发给你的兄弟，让你的兄弟拍照，（温馨提示：链接可以一直使用）",
+        agent_auth_msg: "✅ 已授权中介✅ 告知：路上只要是换车的请都使用 /zjkh 这个指令把链接发给你的兄弟，让你的兄弟拍照，（温馨提示：链接可以一直使用）",
         photo_prompt: "为了保障你的安全换车前请拍照！ 换车一定要是上一个司机安排的哦，如果是请点击下方拍照，如果不是请联系负责人",
         btn_photo: "📷开始拍照",
         zl_msg: "填写招聘申请时请打开手机录屏，按照上面顺序排列填写资料后拍照关闭手机录屏后发送到此群里！",
@@ -54,7 +54,7 @@ const TEXTS = {
         qc_confirm: "⚠️ **恢复出厂设置**\n\n是否确认清空所有数据？",
         qc_done: "✅ 出厂设置已完成！所有授权已清空\n临时任务已清除\nBot 已重置为全新状态",
         qc_cancel: "已取消操作。",
-        sx_done: "✅ 本群链接已刷新！旧链接已失效⚠️",
+        sx_done: "✅ **本群**链接已刷新！旧链接已失效。",
         ban_msg: "用户已踢出并永久拉黑！",
         menu_title: "📋汇盈国际官方机器人指令面板",
         hc_desc: "换车安全拍照",
@@ -90,8 +90,8 @@ const TEXTS = {
                     "${name} ${username}，👤你還沒有獲得授權！🚫\n\n" +
                     "💡立即聯繫負責人授權，否則無法發言。🚫\n\n" +
                     "🚀匯盈國際 - 專業、安全、可靠🚀",
-        auth_success: "✅ 已授權 ✅ 用戶 ${name}！(只能使用 /hc)",
-        agent_auth_msg: "✅ 已授權 ✅ 中介 告知：路上只是要換車的請都使用 /zjkh 這個指令把鏈接發給你的兄弟，讓你的兄弟拍照，（溫馨提示：鏈接可以一直使用）",
+        auth_success: "✅ 已授權 ✅用戶 ${name}！(只能使用 /hc)",
+        agent_auth_msg: "✅ 已授權中介 ✅ 告知：路上只是要換車的請都使用 /zjkh 這個指令把鏈接發給你的兄弟，讓你的兄弟拍照，（溫馨提示：鏈接可以一直使用）",
         photo_prompt: "為了保障你的安全換車前請拍照！ 換車一定要是上一個司機安排的哦，如果是請點擊下方拍照，如果不是請聯繫負責人",
         btn_photo: "📷開始拍照",
         zl_msg: "填寫招聘申請時請打開手機錄屏，按照上面順序排列填寫資料後拍照關閉手機錄屏後發送到此群裡！",
@@ -106,8 +106,8 @@ const TEXTS = {
         perm_deny: "❌ 🔒無權限！ /qc 只限匯盈國際負責人使用。",
         agent_deny: "❌ 無權限！此指令僅限授權中介使用。\n普通用戶請使用 /hc",
         lj_text: "🔗匯盈國際官方對接群鏈接 \n\n🔗點擊下方按鈕直接加入群！",
-        qc_confirm: "⚠️ **恢復出廠設置**\n\n是否確認清空所有數據？",
-        qc_done: "✅ 出廠設置已完成！所有授權已清空\n臨時任務已清除\nBot 已重置為全新狀態",
+        qc_confirm: "⚠️ **恢復出厂设置**\n\n是否確認清空所有數據？",
+        qc_done: "✅ 出厂设置已完成！所有授權已清空\n臨時任務已清除\nBot 已重置為全新狀態",
         qc_cancel: "已取消操作。",
         sx_done: "✅本群鏈接已刷新！舊鏈接已失效⚠️",
         ban_msg: "用戶已踢出並永久拉黑！",
@@ -136,9 +136,9 @@ const TEXTS = {
     }
 };
 
-let authorizedUsers = new Map(); 
+let authorizedUsers = new Map();
 let groupTokens = new Map();
-let groupConfigs = new Map(); 
+let groupConfigs = new Map();
 
 const warningMessages = new Map();
 const unauthorizedMessages = new Map();
@@ -251,14 +251,14 @@ bot.use(async (ctx, next) => {
 
 bot.on('new_chat_members', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-     
+
     for (const m of ctx.message.new_chat_members) {
         if (m.is_bot) continue;
         authorizedUsers.delete(m.id);
         saveAuth();
         try { await bot.telegram.restrictChatMember(ctx.chat.id, m.id, { permissions: { can_send_messages: false } }); } catch(e){}
-        
-        const warning = await ctx.reply(t(ctx.chat.id, 'welcome_user', { name: m.first_name, username: m.username ? `@${m.username}` : '' })); 
+
+        const warning = await ctx.reply(t(ctx.chat.id, 'welcome_user', { name: m.first_name, username: m.username ? `@${m.username}` : '' }));
         warningMessages.set(warning.message_id, { userId: m.id, userName: m.first_name, userUsername: m.username ? `@${m.username}` : '' });
     }
 
@@ -277,10 +277,10 @@ bot.action(['set_lang_cn', 'set_lang_tw'], async (ctx) => {
     groupConfigs.set(String(chatId), { lang: lang });
     saveAuth();
 
-    await ctx.answerCbQuery(lang === 'zh-CN' ? '已设置为简体中文' : '已設置為繁體中文');
-    await ctx.deleteMessage(); 
+    try { await ctx.answerCbQuery(lang === 'zh-CN' ? '已设置为简体中文' : '已設置為繁體中文'); } catch(e){}
+    try { await ctx.deleteMessage(); } catch(e){}
 
-    const text = t(chatId, 'travel_title');
+    const text = t(chatId, '请选择你的出行方式');
     await ctx.reply(text, {
         reply_markup: {
             inline_keyboard: [
@@ -293,7 +293,7 @@ bot.action(['set_lang_cn', 'set_lang_tw'], async (ctx) => {
 
 bot.command('bz', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return; 
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
 
     const chatId = ctx.chat.id;
     const helpText = `${t(chatId, 'menu_title')}\n\n` +
@@ -329,28 +329,28 @@ bot.action('qc_yes', async (ctx) => {
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
     const chatId = ctx.chat.id;
     const startId = ctx.callbackQuery.message.message_id;
-    
+
     try { await ctx.answerCbQuery(); } catch(e) {}
     try { await ctx.deleteMessage(); } catch(e) {}
 
     (async () => {
         factoryReset();
-        
-        let i = 1; 
+
+        let i = 1;
         let consecutiveFails = 0;
-        
+
         while (i <= 1000 && consecutiveFails < 20) {
             try {
-                await new Promise(r => setTimeout(r, 40)); 
-                await bot.telegram.deleteMessage(chatId, startId - i); 
-                consecutiveFails = 0; 
-            } catch (e) { 
-                consecutiveFails++; 
+                await new Promise(r => setTimeout(r, 40));
+                await bot.telegram.deleteMessage(chatId, startId - i);
+                consecutiveFails = 0;
+            } catch (e) {
+                consecutiveFails++;
                 if (e.description && e.description.includes('message can\'t be deleted')) {
-                    break; 
+                    break;
                 }
             }
-            i++; 
+            i++;
         }
 
         await bot.telegram.sendMessage(chatId, t(chatId, 'qc_done'));
@@ -364,7 +364,7 @@ bot.action('qc_no', async (ctx) => {
 bot.command('lj', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
-     
+
     try {
         const link = await bot.telegram.exportChatInviteLink(ctx.chat.id);
         ctx.reply(t(ctx.chat.id, 'lj_text'), {
@@ -385,7 +385,7 @@ bot.command('hc', async (ctx) => {
     const userId = ctx.from.id;
     const role = authorizedUsers.get(userId);
     const isAdminUser = await isAdmin(ctx.chat.id, userId);
-     
+
     if (!isAdminUser && role !== 'user' && role !== 'agent') {
         return ctx.reply(t(ctx.chat.id, 'perm_deny'));
     }
@@ -393,7 +393,7 @@ bot.command('hc', async (ctx) => {
     const chatId = ctx.chat.id;
     const token = getOrRefreshToken(chatId);
     const url = `${WEB_APP_URL}/?chatid=${chatId}&uid=${userId}&name=${encodeURIComponent(ctx.from.first_name)}&token=${token}`;
-     
+
     ctx.reply(t(chatId, 'photo_prompt'), {
         reply_markup: { inline_keyboard: [[{ text: t(chatId, 'btn_photo'), url: url }]] }
     });
@@ -410,7 +410,7 @@ bot.command('zjkh', async (ctx) => {
 
     const token = getOrRefreshToken(chatId);
     const link = `${WEB_APP_URL}/?chatid=${chatId}&uid=${userId}&name=${encodeURIComponent(`中介-${ctx.from.first_name}`)}&token=${token}`;
-     
+
     ctx.reply(`${t(chatId, 'link_title')}\n\n${t(chatId, 'link_copy')}\n${link}`, { disable_web_page_preview: true });
 });
 
@@ -447,11 +447,11 @@ bot.command('lg', async (ctx) => {
 async function handleLinkCommand(ctx, type) {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
-     
+
     const chatId = ctx.chat.id;
     const msg = t(chatId, 'zl_msg');
     const title = type === 'zl' ? t(chatId, 'zl_btn_title') : t(chatId, 'zj_btn_title');
-     
+
     const replyMsg = await ctx.reply(`${msg}\n\n${title}`, {
         reply_markup: {
             inline_keyboard: [
@@ -460,7 +460,7 @@ async function handleLinkCommand(ctx, type) {
             ]
         }
     });
-     
+
     zlMessages.set(replyMsg.message_id, {
         commandType: type,
         targetFirstName: ctx.message.reply_to_message?.from.first_name || '未知',
@@ -486,22 +486,22 @@ bot.on('callback_query', async (ctx) => {
 
     if (data === 'travel_land' || data === 'travel_flight') {
         const text = data === 'travel_land' ? t(chatId, 'land_msg') : t(chatId, 'flight_msg');
-        await ctx.deleteMessage();
+        try { await ctx.deleteMessage(); } catch(e){}
         const m = await ctx.reply(text);
         try { await bot.telegram.pinChatMessage(chatId, m.message_id); } catch(e){}
     }
-     
+
     if (data.startsWith('zl_') || data.startsWith('zj_')) {
         const [type, key] = data.split('_');
         const links = type === 'zl' ? ZL_LINKS : ZJ_LINKS;
         const link = links[key];
         const stored = zlMessages.get(ctx.callbackQuery.message.message_id);
-         
+
         if (stored) {
             const userInfo = `TG名字: ${stored.targetFirstName}\nID: ${stored.targetUserId}`;
             const instr = type === 'zl' ? t(chatId, 'zl_instr') : t(chatId, 'zj_instr');
             const initMsg = t(chatId, 'zl_msg');
-             
+
             await ctx.editMessageText(`${initMsg}\n\n${userInfo}\n\n申请链接：<a href="${link}">${key}链接</a>\n复制链接: ${link}\n\n${instr}`, { parse_mode: 'HTML' });
         }
     }
@@ -517,12 +517,12 @@ bot.on('text', async (ctx) => {
     if (!isAdminUser && role !== 'user' && role !== 'agent') {
         try { await ctx.deleteMessage(); } catch(e){}
         const chatId = ctx.chat.id;
-         
+
         const name = ctx.from.first_name;
         const username = ctx.from.username ? `@${ctx.from.username}` : '';
         const msg = t(chatId, 'unauth_msg', { name, username });
         const warning = await ctx.reply(msg);
-         
+
         warningMessages.set(warning.message_id, { userId: ctx.from.id, userName: ctx.from.first_name });
         return;
     }
@@ -531,9 +531,9 @@ bot.on('text', async (ctx) => {
         const text = ctx.message.text.trim();
         const replyId = ctx.message.reply_to_message.message_id;
         const chatId = ctx.chat.id;
-         
-        let target = warningMessages.get(replyId) || 
-                      unauthorizedMessages.get(replyId) || 
+
+        let target = warningMessages.get(replyId) ||
+                      unauthorizedMessages.get(replyId) ||
                       { userId: ctx.message.reply_to_message.from.id, userName: ctx.message.reply_to_message.from.first_name };
 
         if (!target) return;
@@ -571,7 +571,7 @@ expressApp.post('/upload', async (req, res) => {
     const locText = isTest ? t(chatid, 'loc_fail') : `${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}`;
     const map1 = t(chatid, 'map_amap');
     const map2 = t(chatid, 'map_google');
-     
+
     const userLink = (uid && uid !== '0') ? `<a href="tg://user?id=${uid}">${name}</a>` : name;
 
     const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
@@ -593,7 +593,7 @@ const PORT = process.env.PORT || 10000;
 
 expressApp.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-     
+
     const startBot = async () => {
         try {
             await bot.launch({ dropPendingUpdates: true });
