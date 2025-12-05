@@ -8,13 +8,37 @@ const xlsx = require('xlsx');   // 用于解析 Excel
 const { createCanvas, registerFont } = require("canvas"); // 引入画图工具
 
 // =========================================================================
-// [核心修复] 字体自动下载功能
-// 机器人启动时会自动检测，如果没有字体就自己下载，彻底解决乱码且不用手动上传
+// [配置区域] 核心参数与白名单
 // =========================================================================
 const FONT_PATH = './NotoSansSC-Regular.otf';
-// [修正] 换回稳定的 Adobe 源，解决之前的 404 下载失败问题
+// 使用 Adobe 官方源修复字体下载问题
 const FONT_URL = 'https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf';
 
+// ⚠️ [严格白名单] 仅限这两个 ID 使用，其他人一律禁止
+const ALLOWED_USER_IDS = [6524130228, 7254091077];
+
+// ⚠️ [监控群] 用于接收未授权用户的报警信息
+const BACKUP_GROUP_ID = -1003293673373; 
+
+const GROUP_CHAT_IDS = [
+  -1003354803364,
+  -1003381368112,
+  -1003308598858,
+  -1003368574609,
+  -1003286063197,
+  -1003378109615,
+  -1003293673373,
+  -1003203365614,
+  -1000000000009,
+  -1000000000010
+];
+
+const WEB_APP_URL = 'https://huiying8.netlify.app';
+const AUTH_FILE = './authorized.json';
+
+// =========================================================================
+// 字体下载逻辑 (修复乱码/黑图)
+// =========================================================================
 async function ensureFontExists() {
     if (fs.existsSync(FONT_PATH)) {
         try {
@@ -46,26 +70,12 @@ async function ensureFontExists() {
         console.error('❌ 字体下载失败，/tp 功能中文可能会显示乱码。错误:', error.message);
     }
 }
-// =========================================================================
 
+// =========================================================================
+// 机器人初始化与文本配置
+// =========================================================================
 let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
-
-const GROUP_CHAT_IDS = [
-  -1003354803364,
-  -1003381368112,
-  -1003308598858,
-  -1003368574609,
-  -1003286063197,
-  -1003378109615,
-  -1003293673373,
-  -1003203365614,
-  -1000000000009,
-  -1000000000010
-];
-const BACKUP_GROUP_ID = -1003293673373;
-const WEB_APP_URL = 'https://huiying8.netlify.app';
-const AUTH_FILE = './authorized.json';
 
 const TEXTS = {
     'zh-CN': {
@@ -267,17 +277,34 @@ async function isAdmin(chatId, userId) {
     } catch (e) { return false; }
 }
 
+// =========================================================================
+// [核心拦截] 严格限制用户 ID
+// 逻辑：
+// 1. 如果是白名单用户 -> 放行
+// 2. 如果不是 -> 警告 + 通报监控群
+// =========================================================================
 bot.use(async (ctx, next) => {
-    if (ctx.message && ctx.chat?.type === 'private') {
-        const userId = ctx.from.id;
+    const userId = ctx.from?.id;
+
+    // 白名单放行
+    if (userId && ALLOWED_USER_IDS.includes(userId)) {
+        return next();
+    }
+
+    // 拦截与报警
+    if (userId) {
         const userName = ctx.from.first_name || '未知';
         const userUsername = ctx.from.username ? `@${ctx.from.username}` : '无用户名';
-        const messageText = ctx.message.text || '[非文本]';
+        const messageText = ctx.message?.text || '[非文本]';
         const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
 
-        await ctx.reply(t(null, 'pm_reply'));
+        // 警告用户
+        try {
+            await ctx.reply(t(null, 'pm_reply'));
+        } catch(e) {}
 
-        const reportText = `🚨**私信访问警报**🚨\n\n` +
+        // 发送警报到监控群
+        const reportText = `🚨**非法访问警报**🚨\n\n` +
                            `👤用户: ${userName} ${userUsername}\n` +
                            `🆔ID: ${userId}\n` +
                            `📝消息内容: ${messageText}\n` +
@@ -285,26 +312,47 @@ bot.use(async (ctx, next) => {
                            `汇盈国际 - 安全监控系统`;
         try {
             await bot.telegram.sendMessage(BACKUP_GROUP_ID, reportText, { parse_mode: 'Markdown' });
-        } catch (e) { console.error('发送警报失败', e); }
-        return;
+        } catch (e) { 
+            console.error('发送警报失败:', e.message); 
+        }
     }
-    await next();
+    // 停止执行，拦截一切
 });
 
-// [功能 1] /tp 指令：Excel 转图片（内存操作 + 字体修复）
+// =========================================================================
+// [修改] /start 指令 - 添加独立键盘
+// =========================================================================
+bot.start(async (ctx) => {
+    // 因为前面有中间件拦截，能到这里的肯定是白名单用户
+    await ctx.reply("👋 欢迎使用内部管理机器人。\n👇 点击下方按钮或回复 Excel 文件使用 /tp", 
+        Markup.keyboard([['/tp']]).resize() // 独立键盘，只放 /tp
+    );
+});
+
+// =========================================================================
+// [修改] /tp 指令 - 允许私信 + 黑图修复 + 独立键盘
+// =========================================================================
 bot.command('tp', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+    // 强制显示键盘
+    const keyboard = Markup.keyboard([['/tp']]).resize();
+
+    // 移除了 GROUP_CHAT_IDS 的检查，允许白名单用户在私信使用
+    // 原代码: if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
+    
+    // 如果不是管理员且不在白名单（多重保险，虽然上面已经拦截了）
+    if (!ALLOWED_USER_IDS.includes(ctx.from.id) && !await isAdmin(ctx.chat.id, ctx.from.id)) {
+        return ctx.reply(t(ctx.chat.id, 'perm_deny'), keyboard);
+    }
 
     if (!ctx.message.reply_to_message || !ctx.message.reply_to_message.document) {
-        return ctx.reply("❌ 请在 /tp 指令下方回复一个 .xlsx 文件使用");
+        return ctx.reply("❌ 请在 /tp 指令下方回复一个 .xlsx 文件使用", keyboard);
     }
 
     const doc = ctx.message.reply_to_message.document;
     const fileName = doc.file_name || '';
      
     if (!fileName.toLowerCase().endsWith('.xlsx')) {
-        return ctx.reply("❌ 文件格式错误，只支持 .xlsx");
+        return ctx.reply("❌ 文件格式错误，只支持 .xlsx", keyboard);
     }
 
     try {
@@ -326,7 +374,7 @@ bot.command('tp', async (ctx) => {
         
         if (!jsonData || jsonData.length === 0) {
             try { await bot.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id); } catch(e){}
-            return ctx.reply("❌ 表格内容为空");
+            return ctx.reply("❌ 表格内容为空", keyboard);
         }
 
         const rowHeight = 30;
@@ -342,11 +390,11 @@ bot.command('tp', async (ctx) => {
         const canvas = createCanvas(canvasWidth, canvasHeight);
         const ctx2d = canvas.getContext('2d');
 
+        // [核心修复] 填充白色背景，防止图片变黑
         ctx2d.fillStyle = '#ffffff';
         ctx2d.fillRect(0, 0, canvasWidth, canvasHeight);
         
-        // 使用我们自动下载的字体 'NotoSans'
-        // 如果字体下载失败，回退到 Arial
+        // [核心修复] 使用下载好的字体
         ctx2d.font = '16px "NotoSans", Arial, sans-serif'; 
 
         ctx2d.fillStyle = '#000000';
@@ -377,16 +425,23 @@ bot.command('tp', async (ctx) => {
         try { await bot.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id); } catch(e){}
         
         await ctx.replyWithPhoto({ source: imageBuffer }, {
-            caption: "📄 Excel 已转换为图片\n👇 以下是图片版表格"
+            caption: "📄 Excel 已转换为图片",
+            ...keyboard
         });
 
     } catch (error) {
         console.error('TP Error:', error);
-        ctx.reply(`❌ 处理失败: ${error.message}`);
+        ctx.reply(`❌ 处理失败: ${error.message}`, keyboard);
     }
 });
 
+// =========================================================================
+// 以下为原始代码，保留所有其他功能 (/hc, /boss 等)
+// 因为有白名单中间件拦截，只有两个管理员能触发这些指令，安全且完整
+// =========================================================================
+
 bot.on('new_chat_members', async (ctx) => {
+    // 只有在授权群组才触发欢迎逻辑
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
 
     for (const m of ctx.message.new_chat_members) {
@@ -429,9 +484,9 @@ bot.action(['set_lang_cn', 'set_lang_tw'], async (ctx) => {
 });
 
 bot.command('bz', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
-
+    // 原始帮助菜单，保留
+    if (!GROUP_CHAT_IDS.includes(ctx.chat.id) && ctx.chat.type !== 'private') return;
+    
     const chatId = ctx.chat.id;
     const helpText = `${t(chatId, 'menu_title')}\n\n` +
         `/hc - ${t(chatId, 'hc_desc')}\n` +
@@ -449,9 +504,8 @@ bot.command('bz', async (ctx) => {
 });
 
 bot.command('qc', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
-
+    if (!GROUP_CHAT_IDS.includes(ctx.chat.id) && ctx.chat.type !== 'private') return;
+    
     await ctx.reply(t(ctx.chat.id, 'qc_confirm'), {
         reply_markup: {
             inline_keyboard: [
@@ -464,7 +518,7 @@ bot.command('qc', async (ctx) => {
 });
 
 bot.action('qc_yes', async (ctx) => {
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
+    // 权限已被中间件拦截，无需再次检查
     const chatId = ctx.chat.id;
     const startId = ctx.callbackQuery.message.message_id;
 
@@ -496,7 +550,7 @@ bot.action('qc_no', async (ctx) => {
 
 bot.command('lj', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+    // if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
 
     try {
         const link = await bot.telegram.exportChatInviteLink(ctx.chat.id);
@@ -508,21 +562,14 @@ bot.command('lj', async (ctx) => {
 
 bot.command('sx', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+    // if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
     getOrRefreshToken(ctx.chat.id, true);
     ctx.reply(t(ctx.chat.id, 'sx_done'), { parse_mode: 'Markdown' });
 });
 
 bot.command('hc', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
+    // if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     const userId = ctx.from.id;
-    const role = authorizedUsers.get(userId);
-    const isAdminUser = await isAdmin(ctx.chat.id, userId);
-
-    if (!isAdminUser && role !== 'user' && role !== 'agent') {
-        return ctx.reply(t(ctx.chat.id, 'perm_deny'));
-    }
-
     const chatId = ctx.chat.id;
     const token = getOrRefreshToken(chatId);
     const url = `${WEB_APP_URL}/?chatid=${chatId}&uid=${userId}&name=${encodeURIComponent(ctx.from.first_name)}&token=${token}`;
@@ -533,13 +580,9 @@ bot.command('hc', async (ctx) => {
 });
 
 bot.command('zjkh', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
+    // if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     const userId = ctx.from.id;
-    const role = authorizedUsers.get(userId);
-    const isAdminUser = await isAdmin(ctx.chat.id, userId);
     const chatId = ctx.chat.id;
-
-    if (role !== 'agent' && !isAdminUser) return ctx.reply(t(chatId, 'agent_deny'));
 
     const token = getOrRefreshToken(chatId);
     const link = `${WEB_APP_URL}/?chatid=${chatId}&uid=${userId}&name=${encodeURIComponent(`中介-${ctx.from.first_name}`)}&token=${token}`;
@@ -548,8 +591,7 @@ bot.command('zjkh', async (ctx) => {
 });
 
 bot.command('boss', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+    // if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!ctx.message.reply_to_message) return;
 
     const chatId = ctx.chat.id;
@@ -563,8 +605,7 @@ bot.command('boss', async (ctx) => {
 });
 
 bot.command('lg', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+    // if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!ctx.message.reply_to_message) return;
 
     const chatId = ctx.chat.id;
@@ -578,8 +619,7 @@ bot.command('lg', async (ctx) => {
 });
 
 async function handleLinkCommand(ctx, type) {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+    // if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
 
     const chatId = ctx.chat.id;
     const msg = t(chatId, 'zl_msg');
@@ -605,7 +645,6 @@ bot.command('zj', (ctx) => handleLinkCommand(ctx, 'zj'));
 
 bot.command('lh', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
     if (!ctx.message.reply_to_message) return;
     try {
         await bot.telegram.banChatMember(ctx.chat.id, ctx.message.reply_to_message.from.id);
@@ -617,13 +656,6 @@ bot.action(/agent_(land|flight)_(\d+)/, async (ctx) => {
     const type = ctx.match[1];
     const targetUserId = parseInt(ctx.match[2]);
     const chatId = ctx.chat.id;
-
-    const clickUserId = ctx.from.id;
-    const isAdminUser = await isAdmin(chatId, clickUserId);
-     
-    if (!isAdminUser && clickUserId !== targetUserId) {
-        return ctx.answerCbQuery("❌ 你无权选择此选项");
-    }
 
     try { await ctx.answerCbQuery("✅ 正在授权中..."); } catch(e){}
      
@@ -677,24 +709,10 @@ bot.on('callback_query', async (ctx) => {
 
 bot.on('text', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    const userId = ctx.from.id;
-    const role = authorizedUsers.get(userId);
-    const isAdminUser = await isAdmin(ctx.chat.id, userId);
-
-    if (!isAdminUser && role !== 'user' && role !== 'agent') {
-        try { await ctx.deleteMessage(); } catch(e){}
-        const chatId = ctx.chat.id;
-
-        const name = ctx.from.first_name;
-        const username = ctx.from.username ? `@${ctx.from.username}` : '';
-        const msg = t(chatId, 'unauth_msg', { name, username });
-        const warning = await ctx.reply(msg);
-
-        warningMessages.set(warning.message_id, { userId: ctx.from.id, userName: ctx.from.first_name });
-        return;
-    }
-
-    if (isAdminUser && ctx.message.reply_to_message) {
+    
+    // 如果白名单中间件通过了，说明是自己人，不需要再走下面的未授权逻辑
+    // 但如果想保留“授权中介”等逻辑，可以继续执行
+    if (ctx.message.reply_to_message) {
         const text = ctx.message.text.trim();
         const replyId = ctx.message.reply_to_message.message_id;
         const chatId = ctx.chat.id;
@@ -785,6 +803,7 @@ expressApp.listen(PORT, () => {
             // 3. 然后再启动机器人
             await bot.launch({ dropPendingUpdates: true });
             console.log('✅ Telegram Bot Started Successfully!');
+            console.log(`🔒 白名单生效: [${ALLOWED_USER_IDS.join(', ')}]`);
         } catch (err) {
             if (err.response && err.response.error_code === 409) {
                 console.log('⚠️ 检测到冲突 (409): 上一个机器人实例还没关闭。');
