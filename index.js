@@ -8,62 +8,42 @@ const xlsx = require('xlsx');   // 用于解析 Excel
 const { createCanvas, registerFont } = require("canvas"); // 引入画图工具
 
 // =========================================================================
-// [核心修复] 字体自动下载功能 (增强版)
-// 包含 3 个备用下载地址，如果第一个挂了会自动尝试下一个，确保能下载成功
+// [核心修复] 字体自动下载功能
+// 机器人启动时会自动检测，如果没有字体就自己下载，彻底解决乱码且不用手动上传
 // =========================================================================
 const FONT_PATH = './NotoSansSC-Regular.otf';
-const FONT_URLS = [
-    // 地址1: Adobe 官方源 (Source Han Sans SC = 思源黑体)
-    'https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf',
-    // 地址2: jsDelivr CDN 加速源 (通常最快)
-    'https://cdn.jsdelivr.net/gh/adobe-fonts/source-han-sans@release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf',
-    // 地址3: GitHub原始内容源 (保底)
-    'https://raw.githubusercontent.com/adobe-fonts/source-han-sans/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf'
-];
-
-async function downloadFont(url) {
-    console.log(`⏳ 正在尝试从以下地址下载字体: ${url}`);
-    const writer = fs.createWriteStream(FONT_PATH);
-    const response = await axios({
-        url: url,
-        method: 'GET',
-        responseType: 'stream',
-        timeout: 20000 // 20秒超时
-    });
-    response.data.pipe(writer);
-    return new Promise((resolve, reject) => {
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-    });
-}
+// 使用 GitHub 镜像加速下载思源黑体，确保速度和稳定性
+const FONT_URL = 'https://raw.gitmirror.com/googlefonts/noto-cjk/main/Sans/OTF/Simplified/NotoSansSC-Regular.otf';
 
 async function ensureFontExists() {
     if (fs.existsSync(FONT_PATH)) {
         try {
-            // 只要文件存在，就尝试注册，名字叫 'NotoSans' 方便后面调用
             registerFont(FONT_PATH, { family: 'NotoSans' });
             console.log('✅ 字体文件已存在，加载成功。');
         } catch (e) { console.log('⚠️ 字体加载警告:', e.message); }
         return;
     }
 
-    console.log('⏳ 检测到缺少字体文件，开始自动下载...');
-    
-    // 循环尝试所有备用链接
-    for (let i = 0; i < FONT_URLS.length; i++) {
-        try {
-            await downloadFont(FONT_URLS[i]);
-            console.log('✅ 字体下载成功！正在注册...');
-            registerFont(FONT_PATH, { family: 'NotoSans' });
-            return; // 下载成功，直接退出函数
-        } catch (error) {
-            console.error(`❌ 地址 ${i + 1} 下载失败 (${error.message})，尝试下一个...`);
-            // 如果是最后一个地址也失败了，删除可能损坏的空文件
-            if (i === FONT_URLS.length - 1) {
-                try { if(fs.existsSync(FONT_PATH)) fs.unlinkSync(FONT_PATH); } catch(e){}
-                console.error('❌❌ 所有字体下载地址都失败了。/tp 功能中文可能会显示乱码。');
-            }
-        }
+    console.log('⏳ 检测到缺少字体文件，正在自动下载 (解决乱码问题)...');
+    try {
+        const writer = fs.createWriteStream(FONT_PATH);
+        const response = await axios({
+            url: FONT_URL,
+            method: 'GET',
+            responseType: 'stream'
+        });
+
+        response.data.pipe(writer);
+
+        await new Promise((resolve, reject) => {
+            writer.on('finish', resolve);
+            writer.on('error', reject);
+        });
+
+        console.log('✅ 字体下载完成！正在注册...');
+        registerFont(FONT_PATH, { family: 'NotoSans' });
+    } catch (error) {
+        console.error('❌ 字体下载失败，/tp 功能中文可能会显示乱码。错误:', error.message);
     }
 }
 // =========================================================================
@@ -359,16 +339,40 @@ bot.command('tp', async (ctx) => {
         const canvasWidth = maxCols * colWidth + 40; 
         const canvasHeight = rows * rowHeight + 40;
         
+        // =========================================================================
+        // [修复 1] 确保 registerFont 在 createCanvas 之前执行
+        // 避免 Node 进程重启后字体丢失
+        // =========================================================================
+        try {
+            if (fs.existsSync(FONT_PATH)) {
+                registerFont(FONT_PATH, { family: 'NotoSans' });
+            }
+        } catch (e) {
+            console.log("Canvas Font Registration Warning:", e.message);
+        }
+        // =========================================================================
+
         const canvas = createCanvas(canvasWidth, canvasHeight);
         const ctx2d = canvas.getContext('2d');
 
+        // 1. 强制填充白色背景 (解决透明背景变黑问题)
         ctx2d.fillStyle = '#ffffff';
         ctx2d.fillRect(0, 0, canvasWidth, canvasHeight);
         
-        // 使用我们自动下载的字体 'NotoSans'
-        // 如果字体下载失败，回退到 Arial
-        ctx2d.font = '16px "NotoSans", Arial, sans-serif'; 
+        // 2. 设置字体
+        ctx2d.font = '16px "NotoSans"'; 
 
+        // =========================================================================
+        // [修复 2] measureText 检测 fallback
+        // 如果 NotoSans 加载失败导致宽度为 0，回退到 Arial
+        // =========================================================================
+        if (ctx2d.measureText("测试").width === 0) {
+            console.log("⚠️ NotoSans measureText failed (width=0), fallback to Arial");
+            ctx2d.font = '16px Arial';
+        }
+        // =========================================================================
+
+        // 3. 设置文字颜色为黑色
         ctx2d.fillStyle = '#000000';
         ctx2d.textAlign = 'center';
         ctx2d.textBaseline = 'middle';
@@ -382,8 +386,11 @@ bot.command('tp', async (ctx) => {
             for (let c = 0; c < maxCols; c++) {
                 const x = startX + c * colWidth;
                 const y = startY + r * rowHeight;
+                
+                // 绘制边框
                 ctx2d.strokeRect(x, y, colWidth, rowHeight);
                 
+                // 绘制文字
                 const cellValue = jsonData[r][c] !== undefined ? String(jsonData[r][c]) : '';
                 let displayValue = cellValue;
                 if (ctx2d.measureText(displayValue).width > colWidth - 10) {
@@ -783,32 +790,46 @@ expressApp.post('/upload', async (req, res) => {
 expressApp.get('/', (req, res) => res.send('Bot OK'));
 const PORT = process.env.PORT || 10000;
 
-expressApp.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+// =========================================================================
+// [核心修复 3] 启动顺序逻辑重构 + 最大重试次数限制
+// =========================================================================
 
-    // =========================================================================
-    // [核心修改] 启动前先确保字体存在
-    // =========================================================================
-    const startBot = async () => {
+const startApp = async () => {
+    // 步骤 A: 确保字体存在 (必须最先执行)
+    await ensureFontExists();
+
+    // 步骤 B: 启动机器人 (包含 409 冲突重试逻辑，限制 5 次)
+    const launchBotWithRetry = async (retryCount = 0) => {
+        const MAX_RETRIES = 5;
         try {
-            // 1. 先下载字体
-            await ensureFontExists();
-
-            // 2. 然后再启动机器人
             await bot.launch({ dropPendingUpdates: true });
             console.log('Telegram Bot Started Successfully!');
         } catch (err) {
             if (err.response && err.response.error_code === 409) {
-                console.log('Conflict 409: Previous bot instance is still active. Waiting 5s for it to close...');
-                setTimeout(startBot, 5000);
+                if (retryCount < MAX_RETRIES) {
+                    console.log(`Conflict 409: Bot instance conflict. Retrying ${retryCount + 1}/${MAX_RETRIES} in 5s...`);
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    return launchBotWithRetry(retryCount + 1);
+                } else {
+                    console.error('❌ Max retries (5) reached for Bot launch. Skipping Bot launch to keep Web Service alive.');
+                    // 即使 Bot 启动失败，也不要 crash，继续往下启动 express
+                }
             } else {
                 console.error('Bot 启动失败:', err);
             }
         }
     };
-    startBot();
-});
+
+    await launchBotWithRetry();
+
+    // 步骤 C: 启动 Web 服务器 (最后执行)
+    expressApp.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+};
+
+// 执行启动
+startApp();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
