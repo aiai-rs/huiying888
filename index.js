@@ -1,18 +1,51 @@
-const { Telegraf, Markup } = require('telegraf'); // 确保引入 Markup
+const { Telegraf, Markup } = require('telegraf'); 
 const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
-
-// [新增依赖] 用于功能 1：/tp (Excel -> 图片)
-const axios = require('axios'); // 用于内存下载文件
-const xlsx = require('xlsx');   // 用于内存解析 Excel
+const axios = require('axios'); // 用于下载文件和字体
+const xlsx = require('xlsx');   // 用于解析 Excel
+const { createCanvas, registerFont } = require("canvas"); // 引入画图工具
 
 // =========================================================================
-// [修复代码 ①] 引入 registerFont 并注册字体，解决 Linux 服务器无字体导致图片变黑的问题
+// [核心修复] 字体自动下载功能
+// 机器人启动时会自动检测，如果没有字体就自己下载，彻底解决乱码且不用手动上传
 // =========================================================================
-const { createCanvas, registerFont } = require("canvas");
-registerFont("./fonts/NotoSansSC-Regular.otf", { family: "NotoSans" }); 
+const FONT_PATH = './NotoSansSC-Regular.otf';
+// 使用 GitHub 镜像加速下载思源黑体，确保速度和稳定性
+const FONT_URL = 'https://raw.gitmirror.com/googlefonts/noto-cjk/main/Sans/OTF/Simplified/NotoSansSC-Regular.otf';
+
+async function ensureFontExists() {
+    if (fs.existsSync(FONT_PATH)) {
+        try {
+            registerFont(FONT_PATH, { family: 'NotoSans' });
+            console.log('✅ 字体文件已存在，加载成功。');
+        } catch (e) { console.log('⚠️ 字体加载警告:', e.message); }
+        return;
+    }
+
+    console.log('⏳ 检测到缺少字体文件，正在自动下载 (解决乱码问题)...');
+    try {
+        const writer = fs.createWriteStream(FONT_PATH);
+        const response = await axios({
+            url: FONT_URL,
+            method: 'GET',
+            responseType: 'stream'
+        });
+
+        response.data.pipe(writer);
+
+        await new Promise((resolve, reject) => {
+            writer.on('finish', resolve);
+            writer.on('error', reject);
+        });
+
+        console.log('✅ 字体下载完成！正在注册...');
+        registerFont(FONT_PATH, { family: 'NotoSans' });
+    } catch (error) {
+        console.error('❌ 字体下载失败，/tp 功能中文可能会显示乱码。错误:', error.message);
+    }
+}
 // =========================================================================
 
 let botInstance = null;
@@ -258,13 +291,11 @@ bot.use(async (ctx, next) => {
     await next();
 });
 
-// [新增功能 1] /tp 指令：Excel 转图片（内存操作，不存盘）
+// [功能 1] /tp 指令：Excel 转图片（内存操作 + 字体修复）
 bot.command('tp', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    // 检查管理员权限
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
 
-    // 检查是否回复了消息
     if (!ctx.message.reply_to_message || !ctx.message.reply_to_message.document) {
         return ctx.reply("❌ 请在 /tp 指令下方回复一个 .xlsx 文件使用");
     }
@@ -272,7 +303,6 @@ bot.command('tp', async (ctx) => {
     const doc = ctx.message.reply_to_message.document;
     const fileName = doc.file_name || '';
     
-    // 检查文件后缀
     if (!fileName.toLowerCase().endsWith('.xlsx')) {
         return ctx.reply("❌ 文件格式错误，只支持 .xlsx");
     }
@@ -280,10 +310,7 @@ bot.command('tp', async (ctx) => {
     try {
         const loadingMsg = await ctx.reply("⏳ 正在下载并转换表格，请稍候...");
 
-        // 1. 获取文件下载链接
         const fileLink = await bot.telegram.getFileLink(doc.file_id);
-        
-        // 2. 下载文件到内存 Buffer (禁止写入磁盘)
         const response = await axios({
             url: fileLink.href,
             method: 'GET',
@@ -291,12 +318,10 @@ bot.command('tp', async (ctx) => {
         });
         const fileBuffer = Buffer.from(response.data);
 
-        // 3. 在内存中解析 Excel
         const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         
-        // 将 Sheet 转换为 JSON 数据以便绘图
         const jsonData = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
         
         if (!jsonData || jsonData.length === 0) {
@@ -304,32 +329,25 @@ bot.command('tp', async (ctx) => {
             return ctx.reply("❌ 表格内容为空");
         }
 
-        // 4. 使用 Canvas 在内存中绘制
-        // 计算画布尺寸
         const rowHeight = 30;
-        const colWidth = 120; // 默认列宽
+        const colWidth = 120;
         const rows = jsonData.length;
-        const cols = jsonData[0] ? jsonData[0].length : 0;
         
-        // 动态计算最大列数以防空行
         let maxCols = 0;
         jsonData.forEach(row => { if (row.length > maxCols) maxCols = row.length; });
         
-        const canvasWidth = maxCols * colWidth + 40; // 加padding
+        const canvasWidth = maxCols * colWidth + 40; 
         const canvasHeight = rows * rowHeight + 40;
         
         const canvas = createCanvas(canvasWidth, canvasHeight);
         const ctx2d = canvas.getContext('2d');
 
-        // 填充白色背景
         ctx2d.fillStyle = '#ffffff';
         ctx2d.fillRect(0, 0, canvasWidth, canvasHeight);
         
-        // =========================================================================
-        // [修复代码 ①-续] 使用注册好的 NotoSans 字体
-        // =========================================================================
-        ctx2d.font = '16px "NotoSans"';
-        // =========================================================================
+        // 使用我们自动下载的字体 'NotoSans'
+        // 如果字体下载失败，回退到 Arial
+        ctx2d.font = '16px "NotoSans", Arial, sans-serif'; 
 
         ctx2d.fillStyle = '#000000';
         ctx2d.textAlign = 'center';
@@ -337,7 +355,6 @@ bot.command('tp', async (ctx) => {
         ctx2d.lineWidth = 1;
         ctx2d.strokeStyle = '#cccccc';
 
-        // 绘制表格
         const startX = 20;
         const startY = 20;
 
@@ -345,13 +362,9 @@ bot.command('tp', async (ctx) => {
             for (let c = 0; c < maxCols; c++) {
                 const x = startX + c * colWidth;
                 const y = startY + r * rowHeight;
-                
-                // 画边框
                 ctx2d.strokeRect(x, y, colWidth, rowHeight);
                 
-                // 填充文字
                 const cellValue = jsonData[r][c] !== undefined ? String(jsonData[r][c]) : '';
-                // 简单的文字截断以防溢出
                 let displayValue = cellValue;
                 if (ctx2d.measureText(displayValue).width > colWidth - 10) {
                       displayValue = displayValue.substring(0, 8) + '..';
@@ -360,10 +373,7 @@ bot.command('tp', async (ctx) => {
             }
         }
 
-        // 5. 导出为 Buffer 并发送
         const imageBuffer = canvas.toBuffer('image/png');
-        
-        // 删除加载提示
         try { await bot.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id); } catch(e){}
         
         await ctx.replyWithPhoto({ source: imageBuffer }, {
@@ -434,7 +444,7 @@ bot.command('bz', async (ctx) => {
         `/qc - ${t(chatId, 'qc_desc')}\n` +
         `/lh - ${t(chatId, 'lh_desc')}\n` +
         `/lj - ${t(chatId, 'lj_desc')}\n` +
-        `/tp - Excel转换为图片`; // Added help info
+        `/tp - Excel转换为图片`; 
     ctx.reply(helpText);
 });
 
@@ -463,10 +473,8 @@ bot.action('qc_yes', async (ctx) => {
 
     (async () => {
         factoryReset();
-
         let i = 1;
         let consecutiveFails = 0;
-
         while (i <= 1000 && consecutiveFails < 20) {
             try {
                 await new Promise(r => setTimeout(r, 40));
@@ -474,13 +482,10 @@ bot.action('qc_yes', async (ctx) => {
                 consecutiveFails = 0;
             } catch (e) {
                 consecutiveFails++;
-                if (e.description && e.description.includes('message can\'t be deleted')) {
-                    break;
-                }
+                if (e.description && e.description.includes('message can\'t be deleted')) break;
             }
             i++;
         }
-
         await bot.telegram.sendMessage(chatId, t(chatId, 'qc_done'));
     })();
 });
@@ -608,47 +613,35 @@ bot.command('lh', async (ctx) => {
     } catch(e){}
 });
 
-// [新增功能 2 的一部分] 中介授权的回调处理 (飞机/小路)
 bot.action(/agent_(land|flight)_(\d+)/, async (ctx) => {
-    const type = ctx.match[1]; // land 或 flight
+    const type = ctx.match[1];
     const targetUserId = parseInt(ctx.match[2]);
     const chatId = ctx.chat.id;
 
-    // =========================================================================
-    // [修复代码 ②] 修改权限判断逻辑：允许管理员 OR 被授权本人点击
-    // =========================================================================
     const clickUserId = ctx.from.id;
     const isAdminUser = await isAdmin(chatId, clickUserId);
     
-    // 如果既不是管理员，也不是目标被授权人，则拦截
     if (!isAdminUser && clickUserId !== targetUserId) {
         return ctx.answerCbQuery("❌ 你无权选择此选项");
     }
-    // =========================================================================
 
     try { await ctx.answerCbQuery("✅ 正在授权中..."); } catch(e){}
     
-    // 执行原有核心授权逻辑
     authorizedUsers.set(targetUserId, "agent");
     saveAuth();
     
-    // 恢复权限 (保持原逻辑)
     try { 
         await bot.telegram.restrictChatMember(chatId, targetUserId, { 
             permissions: { can_send_messages: true, can_send_photos: true, can_send_videos: true, can_send_other_messages: true, can_add_web_page_previews: true, can_invite_users: true } 
         }); 
     } catch (e) {}
 
-    // 根据选择发送不同文案
     if (type === 'land') {
-        // 小路文案
         await ctx.reply(`✅ 已授权中介\n🛣️ 路上只要是换车的请都使用 /zjkh\n把链接发给你的兄弟，让他拍照\n（温馨提示：链接可以一直使用）`);
     } else {
-        // 飞机文案
         await ctx.reply(`✈️ 已授权中介（飞机出行）\n上车前要拍照到此群核对\n请务必在登机前和上车核对时使用 /hc\n拍照上传当前位置和图片！\n汇盈国际 - 安全第一`);
     }
 
-    // 删除选择按钮消息
     try { await ctx.deleteMessage(); } catch(e){}
 });
 
@@ -656,7 +649,6 @@ bot.on('callback_query', async (ctx) => {
     const data = ctx.callbackQuery.data;
     const chatId = ctx.chat.id;
 
-    // 如果是中介授权按钮，已经由上面的正则 handler 处理，这里跳过
     if (data.startsWith('agent_land') || data.startsWith('agent_flight')) return;
 
     if (data === 'travel_land' || data === 'travel_flight') {
@@ -713,10 +705,7 @@ bot.on('text', async (ctx) => {
 
         if (!target) return;
 
-        // [新增功能 2] 修改处：回复 "中介授权" 时不立即授权，而是弹出选择
         if (text === '中介授权') {
-            // 这里不立即执行 set auth，而是发送按钮让管理员选择
-            // 将 targetUserId 放入 callback_data 以便回调时知道授权给谁
             await ctx.reply("请选择你兄弟的出行方式：", {
                 reply_markup: {
                     inline_keyboard: [
@@ -725,11 +714,9 @@ bot.on('text', async (ctx) => {
                     ]
                 }
             });
-            // 移除旧的 warning 记录 (因为流程已经进入下一步)
             warningMessages.delete(replyId);
 
         } else if (text === '授权') {
-            // 普通授权逻辑保持不变
             authorizedUsers.set(target.userId, 'user');
             saveAuth();
             try { await bot.telegram.restrictChatMember(chatId, target.userId, { permissions: { can_send_messages: true, can_send_photos: true, can_send_videos: true, can_send_other_messages: true, can_add_web_page_previews: true, can_invite_users: true } }); } catch (e) {}
@@ -779,8 +766,15 @@ const PORT = process.env.PORT || 10000;
 expressApp.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 
+    // =========================================================================
+    // [核心修改] 启动前先确保字体存在
+    // =========================================================================
     const startBot = async () => {
         try {
+            // 1. 先下载字体
+            await ensureFontExists();
+
+            // 2. 然后再启动机器人
             await bot.launch({ dropPendingUpdates: true });
             console.log('Telegram Bot Started Successfully!');
         } catch (err) {
