@@ -7,7 +7,13 @@ const crypto = require('crypto');
 // [新增依赖] 用于功能 1：/tp (Excel -> 图片)
 const axios = require('axios'); // 用于内存下载文件
 const xlsx = require('xlsx');   // 用于内存解析 Excel
-const { createCanvas } = require('canvas'); // 用于内存绘制图片
+
+// =========================================================================
+// [修复代码 ①] 引入 registerFont 并注册字体，解决 Linux 服务器无字体导致图片变黑的问题
+// =========================================================================
+const { createCanvas, registerFont } = require("canvas");
+registerFont("./fonts/NotoSansSC-Regular.otf", { family: "NotoSans" }); 
+// =========================================================================
 
 let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -319,8 +325,12 @@ bot.command('tp', async (ctx) => {
         ctx2d.fillStyle = '#ffffff';
         ctx2d.fillRect(0, 0, canvasWidth, canvasHeight);
         
-        // 设置字体
-        ctx2d.font = '16px Arial';
+        // =========================================================================
+        // [修复代码 ①-续] 使用注册好的 NotoSans 字体
+        // =========================================================================
+        ctx2d.font = '16px "NotoSans"';
+        // =========================================================================
+
         ctx2d.fillStyle = '#000000';
         ctx2d.textAlign = 'center';
         ctx2d.textBaseline = 'middle';
@@ -344,7 +354,7 @@ bot.command('tp', async (ctx) => {
                 // 简单的文字截断以防溢出
                 let displayValue = cellValue;
                 if (ctx2d.measureText(displayValue).width > colWidth - 10) {
-                     displayValue = displayValue.substring(0, 8) + '..';
+                      displayValue = displayValue.substring(0, 8) + '..';
                 }
                 ctx2d.fillText(displayValue, x + colWidth / 2, y + rowHeight / 2);
             }
@@ -604,8 +614,17 @@ bot.action(/agent_(land|flight)_(\d+)/, async (ctx) => {
     const targetUserId = parseInt(ctx.match[2]);
     const chatId = ctx.chat.id;
 
-    // 验证管理员权限 (防止普通用户点击)
-    if (!await isAdmin(chatId, ctx.from.id)) return ctx.answerCbQuery("❌ 无权限");
+    // =========================================================================
+    // [修复代码 ②] 修改权限判断逻辑：允许管理员 OR 被授权本人点击
+    // =========================================================================
+    const clickUserId = ctx.from.id;
+    const isAdminUser = await isAdmin(chatId, clickUserId);
+    
+    // 如果既不是管理员，也不是目标被授权人，则拦截
+    if (!isAdminUser && clickUserId !== targetUserId) {
+        return ctx.answerCbQuery("❌ 你无权选择此选项");
+    }
+    // =========================================================================
 
     try { await ctx.answerCbQuery("✅ 正在授权中..."); } catch(e){}
     
@@ -698,7 +717,7 @@ bot.on('text', async (ctx) => {
         if (text === '中介授权') {
             // 这里不立即执行 set auth，而是发送按钮让管理员选择
             // 将 targetUserId 放入 callback_data 以便回调时知道授权给谁
-            await ctx.reply("请选择兄弟的出行方式：", {
+            await ctx.reply("请选择你兄弟的出行方式：", {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: "🛣️ 走小路", callback_data: `agent_land_${target.userId}` }],
