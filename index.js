@@ -12,8 +12,8 @@ const { createCanvas, registerFont } = require("canvas"); // 引入画图工具
 // 机器人启动时会自动检测，如果没有字体就自己下载，彻底解决乱码且不用手动上传
 // =========================================================================
 const FONT_PATH = './NotoSansSC-Regular.otf';
-// 使用 GitHub 镜像加速下载思源黑体，确保速度和稳定性
-const FONT_URL = 'https://raw.gitmirror.com/googlefonts/noto-cjk/main/Sans/OTF/Simplified/NotoSansSC-Regular.otf';
+// [修正] 换回稳定的 Adobe 源，解决之前的 404 下载失败问题
+const FONT_URL = 'https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf';
 
 async function ensureFontExists() {
     if (fs.existsSync(FONT_PATH)) {
