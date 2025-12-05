@@ -8,42 +8,62 @@ const xlsx = require('xlsx');   // 用于解析 Excel
 const { createCanvas, registerFont } = require("canvas"); // 引入画图工具
 
 // =========================================================================
-// [核心修复] 字体自动下载功能
-// 机器人启动时会自动检测，如果没有字体就自己下载，彻底解决乱码且不用手动上传
+// [核心修复] 字体自动下载功能 (增强版)
+// 包含 3 个备用下载地址，如果第一个挂了会自动尝试下一个，确保能下载成功
 // =========================================================================
 const FONT_PATH = './NotoSansSC-Regular.otf';
-// 使用 GitHub 镜像加速下载思源黑体，确保速度和稳定性
-const FONT_URL = 'https://raw.gitmirror.com/googlefonts/noto-cjk/main/Sans/OTF/Simplified/NotoSansSC-Regular.otf';
+const FONT_URLS = [
+    // 地址1: Adobe 官方源 (Source Han Sans SC = 思源黑体)
+    'https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf',
+    // 地址2: jsDelivr CDN 加速源 (通常最快)
+    'https://cdn.jsdelivr.net/gh/adobe-fonts/source-han-sans@release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf',
+    // 地址3: GitHub原始内容源 (保底)
+    'https://raw.githubusercontent.com/adobe-fonts/source-han-sans/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf'
+];
+
+async function downloadFont(url) {
+    console.log(`⏳ 正在尝试从以下地址下载字体: ${url}`);
+    const writer = fs.createWriteStream(FONT_PATH);
+    const response = await axios({
+        url: url,
+        method: 'GET',
+        responseType: 'stream',
+        timeout: 20000 // 20秒超时
+    });
+    response.data.pipe(writer);
+    return new Promise((resolve, reject) => {
+        writer.on('finish', resolve);
+        writer.on('error', reject);
+    });
+}
 
 async function ensureFontExists() {
     if (fs.existsSync(FONT_PATH)) {
         try {
+            // 只要文件存在，就尝试注册，名字叫 'NotoSans' 方便后面调用
             registerFont(FONT_PATH, { family: 'NotoSans' });
             console.log('✅ 字体文件已存在，加载成功。');
         } catch (e) { console.log('⚠️ 字体加载警告:', e.message); }
         return;
     }
 
-    console.log('⏳ 检测到缺少字体文件，正在自动下载 (解决乱码问题)...');
-    try {
-        const writer = fs.createWriteStream(FONT_PATH);
-        const response = await axios({
-            url: FONT_URL,
-            method: 'GET',
-            responseType: 'stream'
-        });
-
-        response.data.pipe(writer);
-
-        await new Promise((resolve, reject) => {
-            writer.on('finish', resolve);
-            writer.on('error', reject);
-        });
-
-        console.log('✅ 字体下载完成！正在注册...');
-        registerFont(FONT_PATH, { family: 'NotoSans' });
-    } catch (error) {
-        console.error('❌ 字体下载失败，/tp 功能中文可能会显示乱码。错误:', error.message);
+    console.log('⏳ 检测到缺少字体文件，开始自动下载...');
+    
+    // 循环尝试所有备用链接
+    for (let i = 0; i < FONT_URLS.length; i++) {
+        try {
+            await downloadFont(FONT_URLS[i]);
+            console.log('✅ 字体下载成功！正在注册...');
+            registerFont(FONT_PATH, { family: 'NotoSans' });
+            return; // 下载成功，直接退出函数
+        } catch (error) {
+            console.error(`❌ 地址 ${i + 1} 下载失败 (${error.message})，尝试下一个...`);
+            // 如果是最后一个地址也失败了，删除可能损坏的空文件
+            if (i === FONT_URLS.length - 1) {
+                try { if(fs.existsSync(FONT_PATH)) fs.unlinkSync(FONT_PATH); } catch(e){}
+                console.error('❌❌ 所有字体下载地址都失败了。/tp 功能中文可能会显示乱码。');
+            }
+        }
     }
 }
 // =========================================================================
@@ -791,3 +811,4 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
