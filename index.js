@@ -302,7 +302,7 @@ bot.command('tp', async (ctx) => {
 
     const doc = ctx.message.reply_to_message.document;
     const fileName = doc.file_name || '';
-    
+     
     if (!fileName.toLowerCase().endsWith('.xlsx')) {
         return ctx.reply("❌ 文件格式错误，只支持 .xlsx");
     }
@@ -339,40 +339,16 @@ bot.command('tp', async (ctx) => {
         const canvasWidth = maxCols * colWidth + 40; 
         const canvasHeight = rows * rowHeight + 40;
         
-        // =========================================================================
-        // [修复 1] 确保 registerFont 在 createCanvas 之前执行
-        // 避免 Node 进程重启后字体丢失
-        // =========================================================================
-        try {
-            if (fs.existsSync(FONT_PATH)) {
-                registerFont(FONT_PATH, { family: 'NotoSans' });
-            }
-        } catch (e) {
-            console.log("Canvas Font Registration Warning:", e.message);
-        }
-        // =========================================================================
-
         const canvas = createCanvas(canvasWidth, canvasHeight);
         const ctx2d = canvas.getContext('2d');
 
-        // 1. 强制填充白色背景 (解决透明背景变黑问题)
         ctx2d.fillStyle = '#ffffff';
         ctx2d.fillRect(0, 0, canvasWidth, canvasHeight);
         
-        // 2. 设置字体
-        ctx2d.font = '16px "NotoSans"'; 
+        // 使用我们自动下载的字体 'NotoSans'
+        // 如果字体下载失败，回退到 Arial
+        ctx2d.font = '16px "NotoSans", Arial, sans-serif'; 
 
-        // =========================================================================
-        // [修复 2] measureText 检测 fallback
-        // 如果 NotoSans 加载失败导致宽度为 0，回退到 Arial
-        // =========================================================================
-        if (ctx2d.measureText("测试").width === 0) {
-            console.log("⚠️ NotoSans measureText failed (width=0), fallback to Arial");
-            ctx2d.font = '16px Arial';
-        }
-        // =========================================================================
-
-        // 3. 设置文字颜色为黑色
         ctx2d.fillStyle = '#000000';
         ctx2d.textAlign = 'center';
         ctx2d.textBaseline = 'middle';
@@ -386,11 +362,8 @@ bot.command('tp', async (ctx) => {
             for (let c = 0; c < maxCols; c++) {
                 const x = startX + c * colWidth;
                 const y = startY + r * rowHeight;
-                
-                // 绘制边框
                 ctx2d.strokeRect(x, y, colWidth, rowHeight);
                 
-                // 绘制文字
                 const cellValue = jsonData[r][c] !== undefined ? String(jsonData[r][c]) : '';
                 let displayValue = cellValue;
                 if (ctx2d.measureText(displayValue).width > colWidth - 10) {
@@ -647,16 +620,16 @@ bot.action(/agent_(land|flight)_(\d+)/, async (ctx) => {
 
     const clickUserId = ctx.from.id;
     const isAdminUser = await isAdmin(chatId, clickUserId);
-    
+     
     if (!isAdminUser && clickUserId !== targetUserId) {
         return ctx.answerCbQuery("❌ 你无权选择此选项");
     }
 
     try { await ctx.answerCbQuery("✅ 正在授权中..."); } catch(e){}
-    
+     
     authorizedUsers.set(targetUserId, "agent");
     saveAuth();
-    
+     
     try { 
         await bot.telegram.restrictChatMember(chatId, targetUserId, { 
             permissions: { can_send_messages: true, can_send_photos: true, can_send_videos: true, can_send_other_messages: true, can_add_web_page_previews: true, can_invite_users: true } 
@@ -790,46 +763,41 @@ expressApp.post('/upload', async (req, res) => {
 expressApp.get('/', (req, res) => res.send('Bot OK'));
 const PORT = process.env.PORT || 10000;
 
-// =========================================================================
-// [核心修复 3] 启动顺序逻辑重构 + 最大重试次数限制
-// =========================================================================
+expressApp.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 
-const startApp = async () => {
-    // 步骤 A: 确保字体存在 (必须最先执行)
-    await ensureFontExists();
-
-    // 步骤 B: 启动机器人 (包含 409 冲突重试逻辑，限制 5 次)
-    const launchBotWithRetry = async (retryCount = 0) => {
-        const MAX_RETRIES = 5;
+    // =========================================================================
+    // [加强版启动逻辑] 自动下载字体 + 强制清理旧进程 + 智能重试
+    // =========================================================================
+    const startBot = async () => {
         try {
+            // 1. 先下载字体
+            await ensureFontExists();
+
+            // 2. 尝试删除 Webhook (防止旧连接卡死)
+            try {
+                await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+                console.log('🧹 旧 Webhook 已清理');
+            } catch (e) {
+                // 忽略清理错误
+            }
+
+            // 3. 然后再启动机器人
             await bot.launch({ dropPendingUpdates: true });
-            console.log('Telegram Bot Started Successfully!');
+            console.log('✅ Telegram Bot Started Successfully!');
         } catch (err) {
             if (err.response && err.response.error_code === 409) {
-                if (retryCount < MAX_RETRIES) {
-                    console.log(`Conflict 409: Bot instance conflict. Retrying ${retryCount + 1}/${MAX_RETRIES} in 5s...`);
-                    await new Promise(resolve => setTimeout(resolve, 5000));
-                    return launchBotWithRetry(retryCount + 1);
-                } else {
-                    console.error('❌ Max retries (5) reached for Bot launch. Skipping Bot launch to keep Web Service alive.');
-                    // 即使 Bot 启动失败，也不要 crash，继续往下启动 express
-                }
+                console.log('⚠️ 检测到冲突 (409): 上一个机器人实例还没关闭。');
+                console.log('⏳ 等待 10秒 后自动重试...');
+                // 延长到 10 秒，给旧进程更多时间去死亡
+                setTimeout(startBot, 10000);
             } else {
-                console.error('Bot 启动失败:', err);
+                console.error('❌ Bot 启动失败:', err);
             }
         }
     };
-
-    await launchBotWithRetry();
-
-    // 步骤 C: 启动 Web 服务器 (最后执行)
-    expressApp.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-    });
-};
-
-// 执行启动
-startApp();
+    startBot();
+});
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
