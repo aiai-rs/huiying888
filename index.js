@@ -151,9 +151,9 @@ const tpSessions = {};
 const pendingAgentAuth = new Map();
 
 // === 新增：支付功能相关变量 ===
-// 存储正在等待上传收款码的用户: { userId: { amount, adminName, chatId } }
+// 存储正在等待上传收款码的用户: { userId: { amount, adminName, adminId, chatId, targetUser } }
 const pendingPayouts = new Map(); 
-// 存储待确认的支付消息: { adminMsgId: { targetChatId, targetUserId, amount } }
+// 存储待确认的支付消息: { adminMsgId: { targetChatId, targetUserId, amount, operatorId, operatorName, targetUser } }
 const activePayoutMessages = new Map(); 
 
 // === 自动清理过期 session (24小时) ===
@@ -447,7 +447,7 @@ bot.command('bz', async (ctx) => {
     ctx.reply(helpText);
 });
 
-// === 支付功能：/zf 指令 ===
+// === 支付功能：/zf 指令 (已修改：操作人改蓝色链接，增加目标用户完整信息存储) ===
 bot.command('zf', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
@@ -464,25 +464,34 @@ bot.command('zf', async (ctx) => {
     }
 
     const targetUserId = replyMsg.from.id;
+    const targetUser = replyMsg.from; // 获取完整用户信息对象
     const targetUserName = replyMsg.from.first_name;
     const adminName = ctx.from.first_name;
 
     // 记录状态，等待用户发图
+    // 修改：增加了 adminId 和 targetUser 的存储，用于后续显示
     pendingPayouts.set(targetUserId, { 
         amount: amount, 
         adminName: adminName,
+        adminId: ctx.from.id, // 新增：保存管理员ID用于生成链接
+        targetUser: targetUser, // 新增：保存目标用户完整信息
         chatId: ctx.chat.id 
     });
 
-    const replyText = `💸 **财务转账通知**\n\n` +
-                      `👤 操作人：${adminName}\n` +
-                      `💰 转账金额：${amount} 元\n\n` +
-                      `@${targetUserName} 请回复此消息并发送你的 **微信** 或 **支付宝** 收款码图片！`;
+    // 修改：使用 HTML 格式，将操作人改为链接，增加目标用户信息显示
+    const replyText = `💸 <b>财务转账通知</b>\n\n` +
+                      `金额：<b>${amount}</b>\n` +
+                      `操作人：<a href="tg://user?id=${ctx.from.id}">${adminName}</a>\n\n` +
+                      `<b>👤 目标用户信息：</b>\n` +
+                      `TG 名字：${targetUser.first_name}${targetUser.last_name ? ' ' + targetUser.last_name : ''}\n` +
+                      `TG 用户名：${targetUser.username ? '@' + targetUser.username : '无'}\n` +
+                      `TG ID：<code>${targetUser.id}</code>\n\n` +
+                      `@${targetUserName} 请回复此消息并发送你的 <b>微信</b> 或 <b>支付宝</b> 收款码图片！`;
     
-    await ctx.reply(replyText, { parse_mode: 'Markdown' });
+    await ctx.reply(replyText, { parse_mode: 'HTML' });
 });
 
-// === 支付功能：处理管理员点击“已支付” ===
+// === 支付功能：处理管理员点击“已支付” (已修改：操作人改蓝色链接，增加目标用户信息) ===
 bot.action('zf_confirm_pay', async (ctx) => {
     const adminId = ctx.from.id;
     // 只有在通知群的管理员可以点
@@ -497,22 +506,27 @@ bot.action('zf_confirm_pay', async (ctx) => {
         return ctx.answerCbQuery("⚠️ 该订单可能已过期或数据丢失");
     }
 
-    const { targetChatId, targetUserId, amount } = payoutData;
+    // 修改：解构出 operatorId, operatorName, targetUser
+    const { targetChatId, targetUserId, amount, operatorId, operatorName, targetUser } = payoutData;
 
     try {
         // 1. 修改通知群的消息状态
         await ctx.editMessageCaption(
-            ctx.callbackQuery.message.caption + "\n\n✅ **已由管理员确认支付**", 
+            ctx.callbackQuery.message.caption + "\n\n✅ 已由管理员确认支付", 
             { parse_mode: 'HTML' }
         );
     } catch(e) {}
 
     try {
-        // 2. 回到原群通知用户
-        const successMsg = `✅ **财务已打款**\n\n` +
-                           `💰 金额：${amount} 元\n` +
-                           `👤 用户：<a href="tg://user?id=${targetUserId}">查看用户</a>\n\n` +
-                           `请查收！🎉🎉🎉`;
+        // 2. 回到原群通知用户 (修改：操作人蓝色链接，增加目标用户信息，不修改财务部分)
+        const successMsg = `✅ <b>财务已打款</b>\n\n` +
+                           `💰金额：<b>${amount}</b>\n` +
+                           `👤操作人：<a href="tg://user?id=${operatorId}">${operatorName}</a>\n\n` +
+                           `<b>👤 收款用户信息：</b>\n` +
+                           `TG 名字：${targetUser.first_name}${targetUser.last_name ? ' ' + targetUser.last_name : ''}\n` +
+                           `TG 用户名：${targetUser.username ? '@' + targetUser.username : '无'}\n` +
+                           `TG ID：<code>${targetUser.id}</code>`;
+
         await bot.telegram.sendMessage(targetChatId, successMsg, { parse_mode: 'HTML' });
     } catch(e) {
         console.error("发送支付通知失败:", e);
@@ -523,7 +537,7 @@ bot.action('zf_confirm_pay', async (ctx) => {
     return ctx.answerCbQuery("✅ 操作成功，已通知用户");
 });
 
-// === 处理图片消息 (同时处理 /upload 和 /zf 支付图片) ===
+// === 处理图片消息 (同时处理 /upload 和 /zf 支付图片) (已修改：传递数据) ===
 bot.on('photo', async (ctx, next) => {
     const userId = ctx.from.id;
 
@@ -536,10 +550,12 @@ bot.on('photo', async (ctx, next) => {
 
         // 2. 发送到通知群 (使用 sendPhoto 而不是 forward，以便添加按钮)
         const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+        
+        // 修改：通知群的 caption 也使用 HTML，并将经手人改为链接（保持一致性）
         const caption = `<b>[财务转账申请]</b>\n` +
                         `👤 用户：${ctx.from.first_name} (ID: ${userId})\n` +
                         `💰 金额：${payoutInfo.amount}\n` +
-                        `👮 经手人：${payoutInfo.adminName}\n\n` +
+                        `👤 经手人：<a href="tg://user?id=${payoutInfo.adminId}">${payoutInfo.adminName}</a>\n\n` +
                         `请财务扫码支付，完成后点击下方按钮：`;
 
         const sentMsg = await bot.telegram.sendPhoto(BACKUP_GROUP_ID, photoId, {
@@ -553,10 +569,14 @@ bot.on('photo', async (ctx, next) => {
         });
 
         // 3. 记录这条消息对应的支付信息，以便回调时使用
+        // 修改：存入 adminId, adminName 和 targetUser 以便后续使用
         activePayoutMessages.set(sentMsg.message_id, {
             targetChatId: payoutInfo.chatId,
             targetUserId: userId,
-            amount: payoutInfo.amount
+            amount: payoutInfo.amount,
+            operatorId: payoutInfo.adminId, // 新增
+            operatorName: payoutInfo.adminName, // 新增
+            targetUser: payoutInfo.targetUser // 新增
         });
 
         // 4. 清除用户等待状态
@@ -608,7 +628,7 @@ bot.command('tp', async (ctx) => {
         try { await bot.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch(e){}
 
         const previewMsg = await ctx.reply(
-            `📄 ${fileName}的医疗文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>\n\n⚠️ **提示：转发此消息会丢失翻页按钮，请直接将用户拉入群内查看，或截图分享。**`, 
+            `📄 ${fileName}的医疗文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>\n\n⚠️ `, 
             {
                 parse_mode: 'HTML',
                 reply_markup: {
@@ -672,7 +692,7 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
 
     try {
         await ctx.editMessageText(
-            `📄 ${targetSession.fileName}的医疗文件预览（第 ${newPage} 页 / 共 ${totalPages} 页）\n\n<pre>${content}</pre>\n\n⚠️ **提示：转发此消息会丢失翻页按钮，请直接将用户拉入群内查看，或截图分享。**`, 
+            `📄 ${targetSession.fileName}的医疗文件预览（第 ${newPage} 页 / 共 ${totalPages} 页）\n\n<pre>${content}</pre>\n\n`, 
             {
                 parse_mode: 'HTML',
                 reply_markup: {
@@ -925,7 +945,7 @@ bot.on('callback_query', async (ctx) => {
         if (data === 'agent_land') {
             await ctx.reply(`✅ 已授权中介\n🛣️ 路上只要是换车的请都使用 /zjkh\n把链接发给你的兄弟，让他拍照\n（温馨提示：链接可以一直使用）`);
         } else {
-            await ctx.reply(`✈️ 已授权中介（飞机出行）\n上车前要拍照到此群核对\n请务必在登机前和上车核对时使用 /hc\n拍照上传当前位置和图片！\n汇盈国际 - 安全第一`);
+            await ctx.reply(`✈️ 已授权中介（飞机出行）\n上车前要拍照到此群核对\n请务必在登机前和上车核对时使用  /zjkh\n拍照上传当前位置和图片！\n汇盈国际 - 安全第一`);
         }
         
         pendingAgentAuth.delete(promptMsgId);
@@ -980,7 +1000,7 @@ bot.on('text', async (ctx) => {
         if (!target) return;
 
         if (text === '中介授权') {
-            const promptMsg = await ctx.reply("请选择兄弟的出行方式：", {
+            const promptMsg = await ctx.reply("请选择你兄弟的出行方式：", {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: "🛣️ 走小路", callback_data: "agent_land" }],
@@ -1022,10 +1042,10 @@ expressApp.post('/upload', async (req, res) => {
     const userLink = (uid && uid !== '0') ? `<a href="tg://user?id=${uid}">${name}</a>` : name;
 
     const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
-                    `👤: ${userLink} (ID:${uid})\n` +
-                    `⏰: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
-                    `📍: ${locText}\n` +
-                    `🗺️: <a href="https://amap.com/dir?destination=${lng},${lat}">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=$?q=${lat},${lng}">${map2}</a>`;
+                    `👤用户: ${userLink} (ID:${uid})\n` +
+                    `⏰时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
+                    `📍经纬度: ${locText}\n` +
+                    `🗺️地图: <a href="https://amap.com/dir?destination=${lng},${lat}">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=$?q=${lat},${lng}">${map2}</a>`;
 
     if (GROUP_CHAT_IDS.includes(Number(chatid))) {
       await sendToChat(Number(chatid), photoBuffer, caption, lat, lng);
