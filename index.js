@@ -61,7 +61,7 @@ const TEXTS = {
         menu_title: "📋汇盈国际官方机器人指令面板",
         hc_desc: "换车安全拍照",
         zjkh_desc: "中介专用链接",
-        boss_desc: "Boss 查岗",
+        boss_desc: "Boss 查崗",
         lg_desc: "龙哥查岗",
         sx_desc: "刷新链接 (旧链接失效)",
         zl_desc: "招聘申请",
@@ -102,7 +102,7 @@ const TEXTS = {
         zl_btn_title: "👤請選擇申請類型：",
         zj_btn_title: "👤請選擇中介申請類型：",
         land_msg: "🚨🔥上車安全提醒 - 必讀！🔥\n\n上車以後不要跟其他人過多交流，不要透露自己來自哪裡，不要透露個人信息，不要透露自己來幹嘛的，路線不只是帶你自己出境的還帶其他人的，車上什麼人都有，有出境上班的，有案子跑路的，所以目的地很多人都是不一樣的，不用過多的跟他們聊天！！\n\n👋歡迎新成員！請注意以上內容，確保安全出行。路上有什麼問題及時報告到此群\n\n匯盈國際 - 專業、安全、可靠",
-        flight_msg: "上車前要拍照到此群核對\n\n請務必在登機前使用 /hc 拍照上傳當前位置！\n\n匯盈國際 - 安全第一",
+        flight_msg: "上車前要拍照到此群核對\n\n請務必在登机前使用 /hc 拍照上傳當前位置！\n\n匯盈國際 - 安全第一",
         btn_land: "負責人安排走小路",
         btn_flight: "坐飛機",
         perm_deny: "❌ 🔒無權限！ /qc 只限匯盈國際負責人使用。",
@@ -121,7 +121,7 @@ const TEXTS = {
         sx_desc: "刷新鏈接 (舊鏈接失效)",
         zl_desc: "招聘申請",
         zj_desc: "中介申請",
-        qc_desc: "恢復出廠",
+        qc_desc: "恢復出厂",
         lh_desc: "踢出用戶",
         lj_desc: "進群鏈接",
         link_title: "🔗 中介兄弟專用鏈接",
@@ -157,11 +157,9 @@ setInterval(() => {
     for (const userId in tpSessions) {
         if (tpSessions[userId].expire < now) {
             delete tpSessions[userId];
-            // 无需通知用户，静默删除
         }
     }
 }, 60 * 60 * 1000); // 每小时检查一次
-// ===========================================
 
 const ZL_LINKS = { '租车': 'https://che88.netlify.app', '大飞': 'https://fei88.netlify.app', '走药': 'https://yao88.netlify.app', '背债': 'https://bei88.netlify.app' };
 const ZJ_LINKS = { '租车': 'https://zjc88.netlify.app', '大飞': 'https://zjf88.netlify.app', '走药': 'https://zjy88.netlify.app', '背债': 'https://zjb88.netlify.app' };
@@ -256,27 +254,64 @@ function downloadFileToBuffer(url) {
     });
 }
 
+// === 修改功能 C：医疗内容自动总结（增强版） ===
 function generateMedicalSummary(fullText) {
     const text = fullText.join(' ');
-    const keywords = [];
-    if (text.match(/血常规|白细胞|红细胞|血小板/i)) keywords.push("血常规");
-    if (text.match(/尿检|尿蛋白|尿比重/i)) keywords.push("尿液分析");
-    if (text.match(/ALT|AST|转氨酶|胆红素/i)) keywords.push("肝功能");
-    if (text.match(/肌酐|尿素/i)) keywords.push("肾功能");
-    if (text.match(/血糖|甘油三酯|胆固醇/i)) keywords.push("血脂/血糖");
-    if (text.match(/超声|CT|MRI/i)) keywords.push("影像学检查");
+    
+    // 定义医学关键词分类
+    const categories = [
+        { name: '🩺 基础指标', keywords: /身高|体重|BMI|血压|收缩压|舒张压|脉搏|心率/i },
+        { name: '🩸 血常规/炎症', keywords: /白细胞|红细胞|血小板|血红蛋白|淋巴细胞|中性粒|CRP|超敏|C反应蛋白/i },
+        { name: '🧪 血糖血脂', keywords: /血糖|葡萄糖|HbA1c|甘油三酯|胆固醇|脂蛋白/i },
+        { name: '🥃 肝胆胰功能', keywords: /转氨酶|ALT|AST|GGT|胆红素|白蛋白|淀粉酶/i },
+        { name: '💧 肾功能/尿检', keywords: /肌酐|尿素|尿酸|尿蛋白|尿比重|潜血|酮体/i },
+        { name: '🫀 心肌/其他', keywords: /肌钙蛋白|CK-MB|心肌酶|甲功|TSH/i }
+    ];
 
-    const abnormal = [];
-    if (text.match(/↑|高|H\b/)) abnormal.push("存在偏高指标");
-    if (text.match(/↓|低|L\b/)) abnormal.push("存在偏低指标");
-    if (text.match(/阳性|Positive|\+/i)) abnormal.push("可能存在阳性结果");
+    let summaryText = `🧾 医疗内容自动分析（非医疗建议）\n\n`;
 
-    return `🧾 医疗内容自动分析（非医疗建议）\n\n` +
-           `· 检查项目摘要：${keywords.length > 0 ? keywords.join('、') : '未识别到具体项目'}\n` +
-           `· 文本中出现的医学关键词：${keywords.slice(0, 3).join(' ')} ...\n` +
-           `· 表格中可能存在的异常值（仅根据文字判断）：${abnormal.length > 0 ? abnormal.join('、') : '未检测到明显异常标记'}\n` +
-           `· 文件内容可能相关的医学主题：${keywords.join('/')}\n\n` +
-           `⚠️ 注意：以上总结仅依据文件文本，不构成诊断、治疗或医学建议。`;
+    // 异常值检测逻辑（仅文字判断）
+    const abnormalMatch = text.match(/↑|↓|高|低|阳性|Positive|\+/g) || [];
+    const hasAbnormal = abnormalMatch.length > 0;
+
+    categories.forEach(cat => {
+        const matches = text.match(new RegExp(cat.keywords, 'gi'));
+        if (matches) {
+            const uniqueMatches = [...new Set(matches)]; // 去重
+            summaryText += `🟢 ${cat.name}：检测到 ${uniqueMatches.slice(0, 3).join('、')}${uniqueMatches.length > 3 ? '等' : ''}\n`;
+        }
+    });
+
+    summaryText += `\n🔍 风险提示等级：\n`;
+    if (hasAbnormal) {
+        summaryText += `🔴 **可能存在风险**：文本中包含“高/低/阳性/↑/↓”等标记，请重点关注。\n`;
+    } else {
+        summaryText += `🟢 **正常**：未在文本中明确检测到异常标记（仅供参考）。\n`;
+    }
+
+    if (text.match(/复查|建议|咨询/)) {
+        summaryText += `🟡 **需关注**：文件中包含复查或建议相关字样。\n`;
+    }
+
+    summaryText += `\n⚠️ 注意：此分析仅基于文本，不构成医疗建议。`;
+    return summaryText;
+}
+
+// === 辅助函数：计算字符串视觉宽度（简单的中英文混排对齐） ===
+function getVisualWidth(str) {
+    let width = 0;
+    for (let i = 0; i < str.length; i++) {
+        // ASCII字符看作1，其他（中文等）看作2
+        width += str.charCodeAt(i) > 255 ? 2 : 1;
+    }
+    return width;
+}
+
+// 辅助函数：填充字符串以对齐
+function padString(str, targetWidth) {
+    let currentWidth = getVisualWidth(str);
+    if (currentWidth >= targetWidth) return str;
+    return str + ' '.repeat(targetWidth - currentWidth);
 }
 
 bot.use(async (ctx, next) => {
@@ -366,7 +401,13 @@ bot.command('bz', async (ctx) => {
 });
 
 bot.command('tp', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
+    // === 修改功能 1：/tp 只能在私聊中使用 ===
+    if (ctx.chat.type !== 'private') return;
+
+    // === 修改功能 2：/tp 只有指定两人可以使用 ===
+    const ALLOWED_TP_USERS = [7254091077, 6524130228];
+    if (!ALLOWED_TP_USERS.includes(ctx.from.id)) return;
+
     waitingForExcel.add(ctx.from.id);
     await ctx.reply("请发送 .xlsx 文件，我将为您进行内存预览。");
 });
@@ -392,12 +433,35 @@ bot.on('document', async (ctx, next) => {
         const worksheet = workbook.Sheets[sheetName];
         
         const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
-        const formattedLines = jsonData.map((row, index) => {
-            const rowStr = Array.isArray(row) ? row.join(' | ') : String(row);
-            return `${index + 1}: ${rowStr}`;
+
+        // === 修改功能 4：Excel 预览表格对齐 ===
+        // 1. 计算每列最大视觉宽度
+        const colWidths = [];
+        jsonData.forEach(row => {
+            if (Array.isArray(row)) {
+                row.forEach((cell, i) => {
+                    const width = getVisualWidth(String(cell));
+                    if (!colWidths[i] || width > colWidths[i]) {
+                        colWidths[i] = width;
+                    }
+                });
+            }
         });
 
-        // session 手动删除功能（有效期改为24小时）
+        // 2. 格式化行，增加 Padding
+        const formattedLines = jsonData.map((row, index) => {
+            const rowNum = String(index + 1).padStart(2, '0');
+            if (Array.isArray(row)) {
+                const rowStr = row.map((cell, i) => {
+                    // 增加2个空格的间距
+                    return padString(String(cell), colWidths[i]) + '  '; 
+                }).join('| ');
+                return `[${rowNum}] ${rowStr}`;
+            } else {
+                return `[${rowNum}] ${String(row)}`;
+            }
+        });
+
         tpSessions[userId] = {
             pages: [],
             expire: Date.now() + 24 * 60 * 60 * 1000 // 24小时
@@ -413,7 +477,6 @@ bot.on('document', async (ctx, next) => {
         const pageCount = tpSessions[userId].pages.length;
         const page1 = tpSessions[userId].pages[0] || "空文件";
         
-        // 修复：强制使用 HTML 纯文本模式 <pre>
         const previewMsg = await ctx.reply(`📄 文件预览（第 1 页 / 共 ${pageCount} 页）\n\n<pre>${page1}</pre>`, {
             parse_mode: 'HTML',
             reply_markup: {
@@ -422,16 +485,14 @@ bot.on('document', async (ctx, next) => {
                         { text: '⬅️ 上一页', callback_data: 'tp_prev_1' },
                         { text: '下一页 ➡️', callback_data: 'tp_next_1' }
                     ],
-                    // 删除按钮
                     [{ text: '🗑️ 删除预览会话', callback_data: 'tp_delete_session' }]
                 ]
             }
         });
 
-        // 记录消息ID，以便管理员删除时进行反查验证
         tpSessions[userId].msgId = previewMsg.message_id;
 
-        const summary = generateMedicalSummary(formattedLines);
+        const summary = generateMedicalSummary(jsonData.flat()); // 使用原始数据生成总结
         await ctx.reply(summary);
 
     } catch (err) {
@@ -460,11 +521,9 @@ bot.action('tp_delete_session', async (ctx) => {
         return ctx.answerCbQuery("❌ 无权限或会话已过期");
     }
 
-    // 删除 session 和 消息
     delete tpSessions[targetUserId];
     try { await ctx.deleteMessage(); } catch(e) {}
     
-    // 回复确认
     await ctx.reply("🗑️ 文件预览已删除");
     return ctx.answerCbQuery();
 });
@@ -492,7 +551,6 @@ bot.action(/^tp_(prev|next)_(\d+)$/, async (ctx) => {
 
     const content = session.pages[newPage - 1];
     try {
-        // 修复：翻页时也强制使用 HTML 纯文本模式 <pre>
         await ctx.editMessageText(`📄 文件预览（第 ${newPage} 页 / 共 ${totalPages} 页）\n\n<pre>${content}</pre>`, {
             parse_mode: 'HTML',
             reply_markup: {
@@ -501,7 +559,6 @@ bot.action(/^tp_(prev|next)_(\d+)$/, async (ctx) => {
                         { text: '⬅️ 上一页', callback_data: `tp_prev_${newPage}` },
                         { text: '下一页 ➡️', callback_data: `tp_next_${newPage}` }
                     ],
-                    // 删除按钮 (保持存在)
                     [{ text: '🗑️ 删除预览会话', callback_data: 'tp_delete_session' }]
                 ]
             }
