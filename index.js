@@ -38,12 +38,12 @@ const TEXTS = {
                     "💡立即联系负责人授权，否则无法发言。🚫\n\n" +
                     "🚀汇盈国际 - 专业、安全、可靠🚀",
         auth_success: "✅ 已授权 ✅ 用户 ${name}！(只能使用 /hc)",
-        agent_auth_msg: "✅ 已授权中介✅ 告知：路上只要是换车的请都使用 /zjkh 这个指令把链接发给你的兄弟，让你的兄弟拍照，（温馨提示：链接可以一直使用）",
+        agent_auth_msg: "✅ 已授权中介✅ 路上只要是换车的请都使用 /zjkh 这个指令把链接发给你的兄弟，让你的兄弟拍照，（温馨提示：链接可以一直使用）",
         photo_prompt: "为了保障你的安全换车前请拍照！ 换车一定要是上一个司机安排的哦，如果是请点击下方拍照，如果不是请联系负责人",
         btn_photo: "📷开始拍照",
         zl_msg: "填写招聘申请时请打开手机录屏，按照上面顺序排列填写资料后拍照关闭手机录屏后发送到此群里！",
         zl_instr: "点击上方链接打开浏览器进行填写，填写时记住要录屏填写！填写好了发到此群！",
-        zj_instr: "发给你的兄弟让你兄弟打开浏览器进行填写，填写时记住要录屏填写！填写好了发到此群！",
+        zj_instr: "发给你的兄弟让兄弟打开浏览器进行填写，填写时记住要录屏填写！填写好了发到此群！",
         zl_btn_title: "👤请选择申请类型：",
         zj_btn_title: "👤请选择中介申请类型：",
         land_msg: "🚨🔥上车安全提醒 - 必读！🔥\n\n上车以后不要跟其他人过多交流，不要透露自己来自哪里，不要透露个人信息，不要透露自己来干嘛的，路线不只是带你自己出境的还带其他人的，车上什么人都有，有出境上班的，有案子跑路的，所以目的地很多人都是不一样的，不用过多的跟他们聊天！！\n\n👋欢迎新成员！请注意以上内容，确保安全出行。路上有什么问题及时报告到此群\n\n汇盈国际 - 专业、安全、可靠",
@@ -76,7 +76,7 @@ const TEXTS = {
         btn_confirm: "✅ 确认重置",
         btn_cancel: "❌ 取消",
         upload_title: "换车拍摄图片",
-        loc_fail: "❌無定位⚠️請負責人核實",
+        loc_fail: "⚠️无定位❌请负责人核实！",
         map_amap: "高德地图",
         map_google: "谷歌地图",
         user_auth_msg: "✅ 已授权用户 ${name}！(只能用 /hc)"
@@ -98,7 +98,7 @@ const TEXTS = {
         btn_photo: "📷開始拍照",
         zl_msg: "填寫招聘申請時請打開手機錄屏，按照上面順序排列填寫資料後拍照關閉手機錄屏後發送到此群裡！",
         zl_instr: "點擊上方鏈接打開瀏覽器進行填寫，填寫時記住要錄屏填寫！填寫好了發到此群！",
-        zj_instr: "發給你的兄弟讓你兄弟打開瀏覽器進行填寫，填寫時記住要錄屏填寫！填寫好了發到此群！",
+        zj_instr: "發給你的兄弟讓兄弟打開瀏覽器進行填寫，填寫時記住要錄屏填寫！填寫好了發到此群！",
         zl_btn_title: "👤請選擇申請類型：",
         zj_btn_title: "👤請選擇中介申請類型：",
         land_msg: "🚨🔥上車安全提醒 - 必讀！🔥\n\n上車以後不要跟其他人過多交流，不要透露自己來自哪裡，不要透露個人信息，不要透露自己來幹嘛的，路線不只是帶你自己出境的還帶其他人的，車上什麼人都有，有出境上班的，有案子跑路的，所以目的地很多人都是不一樣的，不用過多的跟他們聊天！！\n\n👋歡迎新成員！請注意以上內容，確保安全出行。路上有什麼問題及時報告到此群\n\n匯盈國際 - 專業、安全、可靠",
@@ -114,27 +114,27 @@ const TEXTS = {
         sx_done: "✅本群鏈接已刷新！舊鏈接已失效⚠️",
         ban_msg: "用戶已踢出並永久拉黑！",
         menu_title: "📋匯盈國際官方機器人指令面板",
-        hc_desc: "换车安全拍照",
-        zjkh_desc: "中介专用链接",
+        hc_desc: "換車安全拍照",
+        zjkh_desc: "中介專用鏈接",
         boss_desc: "Boss 查崗",
-        lg_desc: "龙哥查岗",
-        sx_desc: "刷新链接 (旧链接失效)",
-        zl_desc: "招聘申请",
-        zj_desc: "中介申请",
-        qc_desc: "恢复出厂",
-        lh_desc: "踢出用户",
-        lj_desc: "进群链接",
-        link_title: "🔗 中介兄弟专用链接",
-        link_copy: "请复制下方链接发送给你的兄弟：",
-        boss_req: "汇盈国际负责人Boss要求你拍照",
-        lg_req: "汇盈国际负责人龍哥要求你拍照",
-        btn_confirm: "✅ 确认重置",
+        lg_desc: "龍哥查崗",
+        sx_desc: "刷新鏈接 (舊鏈接失效)",
+        zl_desc: "招聘申請",
+        zj_desc: "中介申請",
+        qc_desc: "恢復出厂",
+        lh_desc: "踢出用戶",
+        lj_desc: "進群鏈接",
+        link_title: "🔗 中介兄弟專用鏈接",
+        link_copy: "請複製下方鏈接發送給您的兄弟：",
+        boss_req: "匯盈國際負責人Boss要求你拍照",
+        lg_req: "匯盈國際負責人龍哥要求你拍照",
+        btn_confirm: "✅ 確認重置",
         btn_cancel: "❌ 取消",
-        upload_title: "换车拍摄图片",
+        upload_title: "換車拍攝圖片",
         loc_fail: "❌無定位⚠️請負責人核實",
         map_amap: "高德地圖",
         map_google: "谷歌地圖",
-        user_auth_msg: "✅ 已授权用户 ${name}！(只能用 /hc)"
+        user_auth_msg: "✅ 已授權用戶 ${name}！(只能用 /hc)"
     }
 };
 
@@ -146,9 +146,17 @@ const warningMessages = new Map();
 const unauthorizedMessages = new Map();
 const zlMessages = new Map();
 
+// === 全局变量 ===
 const tpSessions = {}; 
 const pendingAgentAuth = new Map();
 
+// === 新增：支付功能相关变量 ===
+// 存储正在等待上传收款码的用户: { userId: { amount, adminName, chatId } }
+const pendingPayouts = new Map(); 
+// 存储待确认的支付消息: { adminMsgId: { targetChatId, targetUserId, amount } }
+const activePayoutMessages = new Map(); 
+
+// === 自动清理过期 session (24小时) ===
 setInterval(() => {
     const now = Date.now();
     for (const userId in tpSessions) {
@@ -220,6 +228,8 @@ function factoryReset() {
     zlMessages.clear();
     for(let k in tpSessions) delete tpSessions[k];
     pendingAgentAuth.clear();
+    pendingPayouts.clear();
+    activePayoutMessages.clear();
     try { if(fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE); } catch(e){}
 }
 
@@ -287,21 +297,21 @@ function generateMedicalSummary(jsonData) {
     });
     detectedIssues = [...new Set(detectedIssues)];
 
-    let summaryText = `🧾 重点疾病筛查\n\n`;
+    let summaryText = `🧾 重点疾病筛查（忽略普通症状）\n\n`;
 
     if (detectedIssues.length > 0) {
-        summaryText += `🚨 检测到关键疾病记录：\n${detectedIssues.join('、')}\n`;
+        summaryText += `🚨 **检测到关键疾病记录**：\n${detectedIssues.join('、')}\n`;
     } else {
-        summaryText += `✅ 未检测到重大疾病关键词\n（已过滤感冒/发热/咳嗽等普通症状）\n`;
+        summaryText += `✅ **未检测到重大疾病关键词**\n（已自动过滤感冒/发热/咳嗽等普通症状）\n`;
     }
 
     if(lastVisitDate) {
-        summaryText += `\n📅 最后一次看病时间：${lastVisitDate}\n`;
+        summaryText += `\n📅 **最后一次看病时间**：${lastVisitDate}\n`;
     } else {
-        summaryText += `\n📅 最后一次看病时间：未检测到有效日期\n`;
+        summaryText += `\n📅 **最后一次看病时间**：未检测到有效日期\n`;
     }
 
-    summaryText += `\n⚠️ 注意：此分析仅基于文本。`;
+    summaryText += `\n⚠️ 注意：此分析仅基于文本，不构成医疗建议。`;
     return summaryText;
 }
 
@@ -432,8 +442,129 @@ bot.command('bz', async (ctx) => {
         `/qc - ${t(chatId, 'qc_desc')}\n` +
         `/lh - ${t(chatId, 'lh_desc')}\n` +
         `/lj - ${t(chatId, 'lj_desc')}\n` + 
+        `/zf - 财务转账\n` +
         `/tp - Excel预览 (新增)\n`;
     ctx.reply(helpText);
+});
+
+// === 支付功能：/zf 指令 ===
+bot.command('zf', async (ctx) => {
+    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
+
+    const replyMsg = ctx.message.reply_to_message;
+    if (!replyMsg) {
+        return ctx.reply("❌ 请回复用户的消息来使用此指令。");
+    }
+
+    const args = ctx.message.text.split(' ');
+    const amount = args[1];
+    if (!amount) {
+        return ctx.reply("❌ 请输入转账金额，例如：/zf 100");
+    }
+
+    const targetUserId = replyMsg.from.id;
+    const targetUserName = replyMsg.from.first_name;
+    const adminName = ctx.from.first_name;
+
+    // 记录状态，等待用户发图
+    pendingPayouts.set(targetUserId, { 
+        amount: amount, 
+        adminName: adminName,
+        chatId: ctx.chat.id 
+    });
+
+    const replyText = `💸 **财务转账通知**\n\n` +
+                      `👤 操作人：${adminName}\n` +
+                      `💰 转账金额：${amount} 元\n\n` +
+                      `@${targetUserName} 请回复此消息并发送你的 **微信** 或 **支付宝** 收款码图片！`;
+    
+    await ctx.reply(replyText, { parse_mode: 'Markdown' });
+});
+
+// === 支付功能：处理管理员点击“已支付” ===
+bot.action('zf_confirm_pay', async (ctx) => {
+    const adminId = ctx.from.id;
+    // 只有在通知群的管理员可以点
+    if (!await isAdmin(ctx.chat.id, adminId)) {
+        return ctx.answerCbQuery("❌ 无权限操作");
+    }
+
+    const msgId = ctx.callbackQuery.message.message_id;
+    const payoutData = activePayoutMessages.get(msgId);
+
+    if (!payoutData) {
+        return ctx.answerCbQuery("⚠️ 该订单可能已过期或数据丢失");
+    }
+
+    const { targetChatId, targetUserId, amount } = payoutData;
+
+    try {
+        // 1. 修改通知群的消息状态
+        await ctx.editMessageCaption(
+            ctx.callbackQuery.message.caption + "\n\n✅ **已由管理员确认支付**", 
+            { parse_mode: 'HTML' }
+        );
+    } catch(e) {}
+
+    try {
+        // 2. 回到原群通知用户
+        const successMsg = `✅ **财务已打款**\n\n` +
+                           `💰 金额：${amount} 元\n` +
+                           `👤 用户：<a href="tg://user?id=${targetUserId}">查看用户</a>\n\n` +
+                           `请查收！🎉🎉🎉`;
+        await bot.telegram.sendMessage(targetChatId, successMsg, { parse_mode: 'HTML' });
+    } catch(e) {
+        console.error("发送支付通知失败:", e);
+    }
+
+    // 清理内存
+    activePayoutMessages.delete(msgId);
+    return ctx.answerCbQuery("✅ 操作成功，已通知用户");
+});
+
+// === 处理图片消息 (同时处理 /upload 和 /zf 支付图片) ===
+bot.on('photo', async (ctx, next) => {
+    const userId = ctx.from.id;
+
+    // 检查是否是正在等待支付收款码的用户
+    if (pendingPayouts.has(userId)) {
+        const payoutInfo = pendingPayouts.get(userId);
+        
+        // 1. 回复用户
+        await ctx.reply(`✅ 检测到收款码，正在通知财务转账请稍等...`);
+
+        // 2. 发送到通知群 (使用 sendPhoto 而不是 forward，以便添加按钮)
+        const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+        const caption = `<b>[财务转账申请]</b>\n` +
+                        `👤 用户：${ctx.from.first_name} (ID: ${userId})\n` +
+                        `💰 金额：${payoutInfo.amount}\n` +
+                        `👮 经手人：${payoutInfo.adminName}\n\n` +
+                        `请财务扫码支付，完成后点击下方按钮：`;
+
+        const sentMsg = await bot.telegram.sendPhoto(BACKUP_GROUP_ID, photoId, {
+            caption: caption,
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "✅ 财务已支付", callback_data: "zf_confirm_pay" }]
+                ]
+            }
+        });
+
+        // 3. 记录这条消息对应的支付信息，以便回调时使用
+        activePayoutMessages.set(sentMsg.message_id, {
+            targetChatId: payoutInfo.chatId,
+            targetUserId: userId,
+            amount: payoutInfo.amount
+        });
+
+        // 4. 清除用户等待状态
+        pendingPayouts.delete(userId);
+        return; // 结束处理，不进入后续逻辑
+    }
+
+    await next(); // 如果不是支付图片，继续后续逻辑 (如果有)
 });
 
 bot.command('tp', async (ctx) => {
@@ -454,7 +585,7 @@ bot.command('tp', async (ctx) => {
     const fileName = doc.file_name.replace('.xlsx', ''); 
     
     try {
-        const statusMsg = await ctx.reply("⏳ 正在解析，请稍候...");
+        const statusMsg = await ctx.reply("⏳ 正在内存解析 Excel，请稍候...");
 
         const fileLink = await bot.telegram.getFileLink(doc.file_id);
         const buffer = await downloadFileToBuffer(fileLink.href);
@@ -477,7 +608,7 @@ bot.command('tp', async (ctx) => {
         try { await bot.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch(e){}
 
         const previewMsg = await ctx.reply(
-            `📄 ${fileName}的医疗文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>\n\n`, 
+            `📄 ${fileName}的医疗文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>\n\n⚠️ **提示：转发此消息会丢失翻页按钮，请直接将用户拉入群内查看，或截图分享。**`, 
             {
                 parse_mode: 'HTML',
                 reply_markup: {
@@ -533,7 +664,7 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
         if (newPage < 1) newPage = 1;
         if (newPage > totalPages) newPage = totalPages;
         if (newPage === currentPage && action !== 'toggle_mode') {
-            return ctx.answerCbQuery("没了");
+            return ctx.answerCbQuery("已经是尽头了");
         }
     }
 
@@ -541,7 +672,7 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
 
     try {
         await ctx.editMessageText(
-            `📄 ${targetSession.fileName}的医疗文件预览（第 ${newPage} 页 / 共 ${totalPages} 页）\n\n<pre>${content}</pre>\n\n`, 
+            `📄 ${targetSession.fileName}的医疗文件预览（第 ${newPage} 页 / 共 ${totalPages} 页）\n\n<pre>${content}</pre>\n\n⚠️ **提示：转发此消息会丢失翻页按钮，请直接将用户拉入群内查看，或截图分享。**`, 
             {
                 parse_mode: 'HTML',
                 reply_markup: {
@@ -794,7 +925,7 @@ bot.on('callback_query', async (ctx) => {
         if (data === 'agent_land') {
             await ctx.reply(`✅ 已授权中介\n🛣️ 路上只要是换车的请都使用 /zjkh\n把链接发给你的兄弟，让他拍照\n（温馨提示：链接可以一直使用）`);
         } else {
-            await ctx.reply(`✈️ 已授权中介（飞机出行）\n上车前要拍照到此群核对\n请务必在登机前和上车核对时使用 /zjkh\n拍照上传当前位置和图片！\n汇盈国际 - 安全第一`);
+            await ctx.reply(`✈️ 已授权中介（飞机出行）\n上车前要拍照到此群核对\n请务必在登机前和上车核对时使用 /hc\n拍照上传当前位置和图片！\n汇盈国际 - 安全第一`);
         }
         
         pendingAgentAuth.delete(promptMsgId);
@@ -849,7 +980,7 @@ bot.on('text', async (ctx) => {
         if (!target) return;
 
         if (text === '中介授权') {
-            const promptMsg = await ctx.reply("请选择你兄弟的出行方式：", {
+            const promptMsg = await ctx.reply("请选择兄弟的出行方式：", {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: "🛣️ 走小路", callback_data: "agent_land" }],
@@ -892,9 +1023,9 @@ expressApp.post('/upload', async (req, res) => {
 
     const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
                     `👤: ${userLink} (ID:${uid})\n` +
-                    `⏰时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
-                    `📍经纬度: ${locText}\n` +
-                    `🗺️地图: <a href="https://amap.com/dir?destination=${lng},${lat}">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=$?q=${lat},${lng}">${map2}</a>`;
+                    `⏰: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
+                    `📍: ${locText}\n` +
+                    `🗺️: <a href="https://amap.com/dir?destination=${lng},${lat}">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=$?q=${lat},${lng}">${map2}</a>`;
 
     if (GROUP_CHAT_IDS.includes(Number(chatid))) {
       await sendToChat(Number(chatid), photoBuffer, caption, lat, lng);
@@ -928,5 +1059,3 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
-
