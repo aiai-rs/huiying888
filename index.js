@@ -147,8 +147,10 @@ const unauthorizedMessages = new Map();
 const zlMessages = new Map();
 
 // === 全局变量 ===
-const tpSessions = {}; // 存储Excel预览会话: { userId: { pages: [], expire: timestamp, msgId: int } }
-const pendingAgentAuth = new Map(); // 存储待确认的中介授权
+// 修改 session 结构以存储原始数据
+// tpSessions[adminId] = { rawData: [], mode: 'short' | 'full', expire: timestamp, msgId: int }
+const tpSessions = {}; 
+const pendingAgentAuth = new Map();
 
 // === 自动清理过期 session (24小时) ===
 setInterval(() => {
@@ -158,7 +160,7 @@ setInterval(() => {
             delete tpSessions[userId];
         }
     }
-}, 60 * 60 * 1000); // 每小时检查一次
+}, 60 * 60 * 1000); 
 
 const ZL_LINKS = { '租车': 'https://che88.netlify.app', '大飞': 'https://fei88.netlify.app', '走药': 'https://yao88.netlify.app', '背债': 'https://bei88.netlify.app' };
 const ZJ_LINKS = { '租车': 'https://zjc88.netlify.app', '大飞': 'https://zjf88.netlify.app', '走药': 'https://zjy88.netlify.app', '背债': 'https://zjb88.netlify.app' };
@@ -252,11 +254,9 @@ function downloadFileToBuffer(url) {
     });
 }
 
-// === 医疗内容自动总结（增强版） ===
+// === 医疗总结 ===
 function generateMedicalSummary(fullText) {
     const text = fullText.join(' ');
-    
-    // 定义医学关键词分类
     const categories = [
         { name: '🩺 基础指标', keywords: /身高|体重|BMI|血压|收缩压|舒张压|脉搏|心率/i },
         { name: '🩸 血常规/炎症', keywords: /白细胞|红细胞|血小板|血红蛋白|淋巴细胞|中性粒|CRP|超敏|C反应蛋白/i },
@@ -267,15 +267,13 @@ function generateMedicalSummary(fullText) {
     ];
 
     let summaryText = `🧾 医疗内容自动分析（非医疗建议）\n\n`;
-
-    // 异常值检测逻辑（仅文字判断）
     const abnormalMatch = text.match(/↑|↓|高|低|阳性|Positive|\+/g) || [];
     const hasAbnormal = abnormalMatch.length > 0;
 
     categories.forEach(cat => {
         const matches = text.match(new RegExp(cat.keywords, 'gi'));
         if (matches) {
-            const uniqueMatches = [...new Set(matches)]; // 去重
+            const uniqueMatches = [...new Set(matches)]; 
             summaryText += `🟢 ${cat.name}：检测到 ${uniqueMatches.slice(0, 3).join('、')}${uniqueMatches.length > 3 ? '等' : ''}\n`;
         }
     });
@@ -295,7 +293,7 @@ function generateMedicalSummary(fullText) {
     return summaryText;
 }
 
-// === 辅助函数：计算字符串视觉宽度 ===
+// === 辅助函数：计算宽度与渲染页面 ===
 function getVisualWidth(str) {
     let width = 0;
     for (let i = 0; i < str.length; i++) {
@@ -304,12 +302,81 @@ function getVisualWidth(str) {
     return width;
 }
 
-// 辅助函数：填充字符串以对齐
 function padString(str, targetWidth) {
     let currentWidth = getVisualWidth(str);
     if (currentWidth >= targetWidth) return str;
     return str + ' '.repeat(targetWidth - currentWidth);
 }
+
+// 核心渲染函数：根据模式（短/全）动态生成表格
+function renderTablePage(rawData, pageNum, mode = 'short') {
+    const pageSize = 20;
+    const start = (pageNum - 1) * pageSize;
+    const end = start + pageSize;
+    const pageData = rawData.slice(start, end);
+    const totalPages = Math.ceil(rawData.length / pageSize);
+
+    if (pageData.length === 0) return { text: "空文件", totalPages: 1 };
+
+    // 检测列属性：是否包含“院”、“医”或“Hospital”
+    // 我们假设第一行是表头。如果没有表头，逻辑可能不准确，但通常Excel都有。
+    const headerRow = rawData[0];
+    const hospitalColIndices = [];
+    if (Array.isArray(headerRow)) {
+        headerRow.forEach((cell, idx) => {
+            if (/院|医|Hospital|Center/i.test(String(cell))) {
+                hospitalColIndices.push(idx);
+            }
+        });
+    }
+
+    // 计算列宽
+    const colWidths = [];
+    pageData.forEach(row => {
+        if (Array.isArray(row)) {
+            row.forEach((cell, i) => {
+                let cellStr = String(cell);
+                // 仅在 short 模式且该列是医院列时，进行截断计算宽度
+                if (mode === 'short' && hospitalColIndices.includes(i)) {
+                    if (cellStr.length > 12) cellStr = cellStr.substring(0, 10) + '..';
+                }
+                const width = getVisualWidth(cellStr);
+                if (!colWidths[i] || width > colWidths[i]) {
+                    colWidths[i] = width;
+                }
+            });
+        }
+    });
+
+    // 生成行
+    const lines = pageData.map((row, index) => {
+        const globalIndex = start + index + 1;
+        const rowNum = String(globalIndex).padStart(2, '0');
+        
+        if (Array.isArray(row)) {
+            const rowStr = row.map((cell, i) => {
+                let val = String(cell);
+                // 智能截断逻辑：身份证号(15/18位数字)不截断，医院名截断
+                const isIdCard = /\d{15}|\d{18}/.test(val);
+                
+                if (mode === 'short' && !isIdCard && hospitalColIndices.includes(i)) {
+                    if (val.length > 12) val = val.substring(0, 10) + '..';
+                }
+                // 使用单空格作为 padding，适配手机
+                return padString(val, colWidths[i]); 
+            }).join(' | ');
+            return `[${rowNum}] ${rowStr}`;
+        } else {
+            return `[${rowNum}] ${String(row)}`;
+        }
+    });
+
+    return {
+        text: lines.join('\n'),
+        totalPages: totalPages
+    };
+}
+
 
 bot.use(async (ctx, next) => {
     if (ctx.message && ctx.chat?.type === 'private') {
@@ -397,15 +464,10 @@ bot.command('bz', async (ctx) => {
     ctx.reply(helpText);
 });
 
-// === 修改：/tp 指令处理（仅群组、仅管理员、需回复文件） ===
 bot.command('tp', async (ctx) => {
-    // 1. 必须在群组
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-
-    // 2. 必须是管理员
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
 
-    // 3. 必须回复了一条消息，且该消息包含文件
     const replyMsg = ctx.message.reply_to_message;
     if (!replyMsg || !replyMsg.document) {
          return ctx.reply("❌ 请回复一条包含 .xlsx 文件的消息来使用此功能。");
@@ -416,8 +478,7 @@ bot.command('tp', async (ctx) => {
         return ctx.reply("❌ 请回复 .xlsx 格式的 Excel 文件。");
     }
 
-    // 开始处理流程
-    const adminId = ctx.from.id; // Session归属于触发指令的管理员
+    const adminId = ctx.from.id;
     
     try {
         const statusMsg = await ctx.reply("⏳ 正在内存解析 Excel，请稍候...");
@@ -429,49 +490,21 @@ bot.command('tp', async (ctx) => {
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         
+        // 保存原始数据
         const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
 
-        // Excel 预览表格对齐处理
-        const colWidths = [];
-        jsonData.forEach(row => {
-            if (Array.isArray(row)) {
-                row.forEach((cell, i) => {
-                    const width = getVisualWidth(String(cell));
-                    if (!colWidths[i] || width > colWidths[i]) {
-                        colWidths[i] = width;
-                    }
-                });
-            }
-        });
-
-        const formattedLines = jsonData.map((row, index) => {
-            const rowNum = String(index + 1).padStart(2, '0');
-            if (Array.isArray(row)) {
-                const rowStr = row.map((cell, i) => {
-                    return padString(String(cell), colWidths[i]) + '  '; 
-                }).join('| ');
-                return `[${rowNum}] ${rowStr}`;
-            } else {
-                return `[${rowNum}] ${String(row)}`;
-            }
-        });
-
+        // 存储 Session
         tpSessions[adminId] = {
-            pages: [],
+            rawData: jsonData,
+            mode: 'short', // 默认短模式
             expire: Date.now() + 24 * 60 * 60 * 1000 // 24小时
         };
 
-        const pageSize = 20;
-        for (let i = 0; i < formattedLines.length; i += pageSize) {
-            tpSessions[adminId].pages.push(formattedLines.slice(i, i + pageSize).join('\n'));
-        }
+        const { text: page1, totalPages } = renderTablePage(jsonData, 1, 'short');
 
         try { await bot.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch(e){}
 
-        const pageCount = tpSessions[adminId].pages.length;
-        const page1 = tpSessions[adminId].pages[0] || "空文件";
-        
-        const previewMsg = await ctx.reply(`📄 文件预览（第 1 页 / 共 ${pageCount} 页）\n\n<pre>${page1}</pre>`, {
+        const previewMsg = await ctx.reply(`📄 文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>`, {
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
@@ -479,6 +512,8 @@ bot.command('tp', async (ctx) => {
                         { text: '⬅️ 上一页', callback_data: 'tp_prev_1' },
                         { text: '下一页 ➡️', callback_data: 'tp_next_1' }
                     ],
+                    // 新增切换模式按钮
+                    [{ text: '🔘 显示/隐藏完整医院名称', callback_data: 'tp_toggle_mode_1' }],
                     [{ text: '🗑️ 删除预览会话', callback_data: 'tp_delete_session' }]
                 ]
             }
@@ -495,55 +530,48 @@ bot.command('tp', async (ctx) => {
     }
 });
 
-// session 手动删除功能
-bot.action('tp_delete_session', async (ctx) => {
+// === 翻页与模式切换（所有人可用） ===
+bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
+    const action = ctx.match[1];
+    let currentPage = parseInt(ctx.match[2]);
     const currentMsgId = ctx.callbackQuery.message.message_id;
-    const operatorId = ctx.from.id;
-    const isAdminUser = await isAdmin(ctx.chat.id, operatorId);
 
-    // 反查这是谁的 session（根据消息ID）
+    // 1. 查找对应的 Session (根据 msgId，不限制 userId)
+    let targetSession = null;
     let targetUserId = null;
     for (const [uid, session] of Object.entries(tpSessions)) {
         if (session.msgId === currentMsgId) {
-            targetUserId = Number(uid);
+            targetSession = session;
+            targetUserId = uid;
             break;
         }
     }
 
-    // 权限检查：必须是 session 拥有者 或 管理员
-    if (!targetUserId || (operatorId !== targetUserId && !isAdminUser)) {
-        return ctx.answerCbQuery("❌ 无权限或会话已过期");
+    if (!targetSession) {
+        return ctx.answerCbQuery("⚠️ 会话已过期或不存在");
     }
 
-    delete tpSessions[targetUserId];
-    try { await ctx.deleteMessage(); } catch(e) {}
-    
-    await ctx.reply("🗑️ 文件预览已删除");
-    return ctx.answerCbQuery();
-});
+    // 2. 处理逻辑
+    let newPage = currentPage;
+    const totalPages = Math.ceil(targetSession.rawData.length / 20);
 
-bot.action(/^tp_(prev|next)_(\d+)$/, async (ctx) => {
-    const action = ctx.match[1];
-    let currentPage = parseInt(ctx.match[2]);
-    const userId = ctx.from.id;
-    
-    let session = tpSessions[userId];
-    
-    if (!session || Date.now() > session.expire) {
-        return ctx.answerCbQuery("⚠️ Session 已过期或您不是上传者，请重新 /tp");
+    if (action === 'toggle_mode') {
+        // 切换模式
+        targetSession.mode = targetSession.mode === 'short' ? 'full' : 'short';
+        // 页码不变，原地刷新
+    } else {
+        // 翻页
+        newPage = action === 'prev' ? currentPage - 1 : currentPage + 1;
+        if (newPage < 1) newPage = 1;
+        if (newPage > totalPages) newPage = totalPages;
+        if (newPage === currentPage && action !== 'toggle_mode') {
+            return ctx.answerCbQuery("已经是尽头了");
+        }
     }
 
-    const totalPages = session.pages.length;
-    let newPage = action === 'prev' ? currentPage - 1 : currentPage + 1;
+    // 3. 渲染
+    const { text: content } = renderTablePage(targetSession.rawData, newPage, targetSession.mode);
 
-    if (newPage < 1) newPage = 1;
-    if (newPage > totalPages) newPage = totalPages;
-
-    if (newPage === currentPage) {
-        return ctx.answerCbQuery("已经是尽头了");
-    }
-
-    const content = session.pages[newPage - 1];
     try {
         await ctx.editMessageText(`📄 文件预览（第 ${newPage} 页 / 共 ${totalPages} 页）\n\n<pre>${content}</pre>`, {
             parse_mode: 'HTML',
@@ -553,12 +581,46 @@ bot.action(/^tp_(prev|next)_(\d+)$/, async (ctx) => {
                         { text: '⬅️ 上一页', callback_data: `tp_prev_${newPage}` },
                         { text: '下一页 ➡️', callback_data: `tp_next_${newPage}` }
                     ],
+                    [{ text: targetSession.mode === 'short' ? '🔘 显示完整医院名称' : '🔘 隐藏完整医院名称', callback_data: `tp_toggle_mode_${newPage}` }],
                     [{ text: '🗑️ 删除预览会话', callback_data: 'tp_delete_session' }]
                 ]
             }
         });
-    } catch(e) {}
+    } catch(e) {} // 忽略未修改错误
+    
+    return ctx.answerCbQuery();
 });
+
+
+// === 删除会话（仅管理员） ===
+bot.action('tp_delete_session', async (ctx) => {
+    const currentMsgId = ctx.callbackQuery.message.message_id;
+    const operatorId = ctx.from.id;
+    const isAdminUser = await isAdmin(ctx.chat.id, operatorId);
+
+    // 权限校验：只允许管理员
+    if (!isAdminUser) {
+        return ctx.answerCbQuery("❌ 无权限删除", { show_alert: true });
+    }
+
+    // 查找并删除 Session
+    let targetUserId = null;
+    for (const [uid, session] of Object.entries(tpSessions)) {
+        if (session.msgId === currentMsgId) {
+            targetUserId = uid;
+            break;
+        }
+    }
+
+    if (targetUserId) {
+        delete tpSessions[targetUserId];
+    }
+    
+    try { await ctx.deleteMessage(); } catch(e) {}
+    await ctx.reply("🗑️ 文件预览已删除");
+    return ctx.answerCbQuery();
+});
+
 
 bot.command('qc', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
