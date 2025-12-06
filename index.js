@@ -3,8 +3,8 @@ const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
-const xlsx = require('xlsx'); // 用于解析 Excel
-const https = require('https'); // 用于内存下载文件
+const xlsx = require('xlsx');
+const https = require('https');
 
 let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -76,7 +76,7 @@ const TEXTS = {
         btn_confirm: "✅ 确认重置",
         btn_cancel: "❌ 取消",
         upload_title: "换车拍摄图片",
-        loc_fail: "⚠️无定位❌请负责人核实！",
+        loc_fail: "❌無定位⚠️請負責人核實",
         map_amap: "高德地图",
         map_google: "谷歌地图",
         user_auth_msg: "✅ 已授权用户 ${name}！(只能用 /hc)"
@@ -146,11 +146,9 @@ const warningMessages = new Map();
 const unauthorizedMessages = new Map();
 const zlMessages = new Map();
 
-// === 全局变量 ===
 const tpSessions = {}; 
 const pendingAgentAuth = new Map();
 
-// === 自动清理过期 session (24小时) ===
 setInterval(() => {
     const now = Date.now();
     for (const userId in tpSessions) {
@@ -252,11 +250,7 @@ function downloadFileToBuffer(url) {
     });
 }
 
-// === 医疗总结（净化版：只记录大问题） ===
-function generateMedicalSummary(fullText) {
-    const text = fullText.join(' ');
-    
-    // 只记录重大/慢性/关键疾病，忽略普通小毛病
+function generateMedicalSummary(jsonData) {
     const majorKeywords = [
         '高血压', '糖尿病', '结石', '肿瘤', '癌', '骨折', '艾滋', 'HIV', 
         '肝炎', '结核', '肾衰', '心梗', '脑梗', '白血病', '贫血', 
@@ -264,10 +258,30 @@ function generateMedicalSummary(fullText) {
     ];
 
     let detectedIssues = [];
+    let fullText = "";
+    let lastVisitDate = null;
+    let maxTimestamp = 0;
+
+    jsonData.forEach(row => {
+        if(Array.isArray(row)) {
+            const rowStr = row.join(' ');
+            fullText += rowStr + " ";
+
+            if(row[6]) {
+                const timeStr = String(row[6]);
+                const ts = Date.parse(timeStr);
+                if(!isNaN(ts)) {
+                    if(ts > maxTimestamp) {
+                        maxTimestamp = ts;
+                        lastVisitDate = timeStr;
+                    }
+                }
+            }
+        }
+    });
     
-    // 扫描关键词并去重
     majorKeywords.forEach(keyword => {
-        if (new RegExp(keyword, 'i').test(text)) {
+        if (new RegExp(keyword, 'i').test(fullText)) {
             detectedIssues.push(keyword);
         }
     });
@@ -281,13 +295,18 @@ function generateMedicalSummary(fullText) {
         summaryText += `✅ **未检测到重大疾病关键词**\n（已自动过滤感冒/发热/咳嗽等普通症状）\n`;
     }
 
+    if(lastVisitDate) {
+        summaryText += `\n📅 **最后一次看病时间**：${lastVisitDate}\n`;
+    } else {
+        summaryText += `\n📅 **最后一次看病时间**：未检测到有效日期\n`;
+    }
+
     summaryText += `\n⚠️ 注意：此分析仅基于文本，不构成医疗建议。`;
     return summaryText;
 }
 
-// === 渲染核心：卡片式排版 ===
 function renderCardPage(rawData, pageNum, mode = 'short') {
-    const pageSize = 8; // 卡片占位大，每页显示8条，避免消息过长
+    const pageSize = 8; 
     const start = (pageNum - 1) * pageSize;
     const end = start + pageSize;
     const pageData = rawData.slice(start, end);
@@ -295,13 +314,10 @@ function renderCardPage(rawData, pageNum, mode = 'short') {
 
     if (pageData.length === 0) return { text: "空文件", totalPages: 1 };
 
-    // 假设 Excel 结构：序号(0)|ID(1)|姓名(2)|医院(3)|类型(4)|诊断(5)|时间(6)
-    // 如果没有表头或者数据列不够，做兼容处理
     const lines = pageData.map((row, index) => {
         const globalIndex = start + index + 1;
         const rowNum = String(globalIndex).padStart(2, '0');
         
-        // 安全获取数据，避免 undefined
         const getCol = (i) => (Array.isArray(row) && row[i] ? String(row[i]) : '');
         
         let name = getCol(2);
@@ -311,15 +327,10 @@ function renderCardPage(rawData, pageNum, mode = 'short') {
         let diagnosis = getCol(5);
         let time = getCol(6);
 
-        // 如果该行数据不对（例如是表头），简单跳过或原样显示，这里做简单处理
-        // 假设第一行是表头，如果包含"姓名"等字样，显示原样
         if (name.includes('姓名') || id.includes('身份证')) {
-            // 是表头，略过或做特殊处理，这里选择略过，只显示数据
-             // 实际使用中表头通常在第0页，这里假设用户想看数据，跳过表头行
              return null; 
         }
 
-        // 医院名称截断逻辑
         if (mode === 'short' && hospital.length > 12) {
             hospital = hospital.substring(0, 10) + '..';
         }
@@ -330,7 +341,7 @@ function renderCardPage(rawData, pageNum, mode = 'short') {
 💡 ${diagnosis}
 ⏰ ${time}
 ➖➖➖➖➖➖➖➖➖➖`;
-    }).filter(line => line !== null); // 过滤掉 null
+    }).filter(line => line !== null); 
 
     return {
         text: lines.join('\n'),
@@ -440,7 +451,7 @@ bot.command('tp', async (ctx) => {
     }
 
     const adminId = ctx.from.id;
-    const fileName = doc.file_name.replace('.xlsx', ''); // 去掉扩展名
+    const fileName = doc.file_name.replace('.xlsx', ''); 
     
     try {
         const statusMsg = await ctx.reply("⏳ 正在内存解析 Excel，请稍候...");
@@ -452,14 +463,12 @@ bot.command('tp', async (ctx) => {
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         
-        // 保存原始数据
         const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
 
-        // 存储 Session
         tpSessions[adminId] = {
             rawData: jsonData,
             mode: 'short', 
-            fileName: fileName, // 存文件名
+            fileName: fileName, 
             expire: Date.now() + 24 * 60 * 60 * 1000 
         };
 
@@ -467,7 +476,6 @@ bot.command('tp', async (ctx) => {
 
         try { await bot.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch(e){}
 
-        // 发送预览，包含文件名标题和底部防转发提示
         const previewMsg = await ctx.reply(
             `📄 ${fileName}的医疗文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>\n\n⚠️ **提示：转发此消息会丢失翻页按钮，请直接将用户拉入群内查看，或截图分享。**`, 
             {
@@ -487,7 +495,7 @@ bot.command('tp', async (ctx) => {
 
         tpSessions[adminId].msgId = previewMsg.message_id;
 
-        const summary = generateMedicalSummary(jsonData.flat());
+        const summary = generateMedicalSummary(jsonData);
         await ctx.reply(summary);
 
     } catch (err) {
@@ -496,7 +504,6 @@ bot.command('tp', async (ctx) => {
     }
 });
 
-// === 翻页与模式切换 ===
 bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
     const action = ctx.match[1];
     let currentPage = parseInt(ctx.match[2]);
@@ -517,7 +524,7 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
     }
 
     let newPage = currentPage;
-    const totalPages = Math.ceil(targetSession.rawData.length / 8); // 注意 pageSize = 8
+    const totalPages = Math.ceil(targetSession.rawData.length / 8); 
 
     if (action === 'toggle_mode') {
         targetSession.mode = targetSession.mode === 'short' ? 'full' : 'short';
@@ -554,7 +561,6 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
     return ctx.answerCbQuery();
 });
 
-// === 删除会话 ===
 bot.action('tp_delete_session', async (ctx) => {
     const currentMsgId = ctx.callbackQuery.message.message_id;
     const operatorId = ctx.from.id;
