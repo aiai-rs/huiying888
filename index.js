@@ -151,7 +151,7 @@ const waitingForExcel = new Set(); // 记录正在等待上传Excel的用户ID
 const tpSessions = {}; // 存储Excel预览会话: { userId: { pages: [], expire: timestamp, msgId: int } }
 const pendingAgentAuth = new Map(); // 存储待确认的中介授权
 
-// === 新增：自动清理过期 session (24小时) ===
+// === 自动清理过期 session (24小时) ===
 setInterval(() => {
     const now = Date.now();
     for (const userId in tpSessions) {
@@ -397,7 +397,7 @@ bot.on('document', async (ctx, next) => {
             return `${index + 1}: ${rowStr}`;
         });
 
-        // 新增：session 手动删除功能（有效期改为24小时）
+        // session 手动删除功能（有效期改为24小时）
         tpSessions[userId] = {
             pages: [],
             expire: Date.now() + 24 * 60 * 60 * 1000 // 24小时
@@ -413,15 +413,16 @@ bot.on('document', async (ctx, next) => {
         const pageCount = tpSessions[userId].pages.length;
         const page1 = tpSessions[userId].pages[0] || "空文件";
         
-        // 新增：发送预览时加入删除按钮，并记录消息ID
-        const previewMsg = await ctx.reply(`📄 文件预览（第 1 页 / 共 ${pageCount} 页）\n\n${page1}`, {
+        // 修复：强制使用 HTML 纯文本模式 <pre>
+        const previewMsg = await ctx.reply(`📄 文件预览（第 1 页 / 共 ${pageCount} 页）\n\n<pre>${page1}</pre>`, {
+            parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
                     [
                         { text: '⬅️ 上一页', callback_data: 'tp_prev_1' },
                         { text: '下一页 ➡️', callback_data: 'tp_next_1' }
                     ],
-                    // 新增：删除按钮
+                    // 删除按钮
                     [{ text: '🗑️ 删除预览会话', callback_data: 'tp_delete_session' }]
                 ]
             }
@@ -439,7 +440,7 @@ bot.on('document', async (ctx, next) => {
     }
 });
 
-// 新增：session 手动删除功能
+// session 手动删除功能
 bot.action('tp_delete_session', async (ctx) => {
     const currentMsgId = ctx.callbackQuery.message.message_id;
     const operatorId = ctx.from.id;
@@ -491,14 +492,16 @@ bot.action(/^tp_(prev|next)_(\d+)$/, async (ctx) => {
 
     const content = session.pages[newPage - 1];
     try {
-        await ctx.editMessageText(`📄 文件预览（第 ${newPage} 页 / 共 ${totalPages} 页）\n\n${content}`, {
+        // 修复：翻页时也强制使用 HTML 纯文本模式 <pre>
+        await ctx.editMessageText(`📄 文件预览（第 ${newPage} 页 / 共 ${totalPages} 页）\n\n<pre>${content}</pre>`, {
+            parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [
                     [
                         { text: '⬅️ 上一页', callback_data: `tp_prev_${newPage}` },
                         { text: '下一页 ➡️', callback_data: `tp_next_${newPage}` }
                     ],
-                    // 新增：删除按钮 (保持存在)
+                    // 删除按钮 (保持存在)
                     [{ text: '🗑️ 删除预览会话', callback_data: 'tp_delete_session' }]
                 ]
             }
