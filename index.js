@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const path = require('path');
 
 // ==========================================================
-// ✅ 核心依赖：Canvas (纯内存绘图) + XLSX + Axios
+// ✅ 核心依赖
 // ==========================================================
 const axios = require('axios');
 const xlsx = require('xlsx');
@@ -32,52 +32,49 @@ const WEB_APP_URL = 'https://huiying8.netlify.app';
 const AUTH_FILE = './authorized.json';
 
 // ==========================================================
-// ✅ 全局字体初始化 (必须在程序启动最开始执行)
+// ✅ 字体系统 (程序启动时最优先执行)
 // ==========================================================
 const FONT_PATH = path.join(__dirname, 'custom_font.ttf');
-// 优化后的字体链接列表 (优先使用更稳定的 GitHub Raw 链接)
-const FONT_URLS = [
-    // 站酷快乐体 (中文支持好，文件适中)
-    'https://github.com/google/fonts/raw/main/ofl/zcoolkuaile/ZCOOLKuaiLe-Regular.ttf',
-    // 马善政毛笔体
-    'https://github.com/google/fonts/raw/main/ofl/mashanzheng/MaShanZheng-Regular.ttf',
-    // Noto Sans SC (备用，文件较大)
-    'https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/Simplified/NotoSansCJKsc-Regular.otf'
-];
+// 使用 GitHub Raw 链接，避免重定向问题
+const FONT_URL = 'https://github.com/google/fonts/raw/main/ofl/zcoolkuaile/ZCOOLKuaiLe-Regular.ttf';
 
-// 初始化字体函数
 async function initGlobalFont() {
-    // 1. 检查文件是否存在
+    console.log('🔄 [System] 正在检查字体环境...');
+    
+    // 1. 如果文件不存在，强制下载
     if (!fs.existsSync(FONT_PATH)) {
-        console.log('⏳ [System] 正在下载中文字体...');
-        for (const url of FONT_URLS) {
-            try {
-                console.log(`   尝试下载: ${url}`);
-                const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
-                if (response.data.length < 1000) throw new Error("文件过小");
-                
-                fs.writeFileSync(FONT_PATH, response.data);
-                console.log('✅ [System] 字体下载成功！');
-                break; // 下载成功即跳出循环
-            } catch (e) {
-                console.error(`❌ [System] 下载失败: ${e.message}`);
+        console.log('⏳ [System] 正在从 GitHub 下载字体...');
+        try {
+            const response = await axios.get(FONT_URL, { 
+                responseType: 'arraybuffer', 
+                timeout: 30000,
+                headers: { 'User-Agent': 'Mozilla/5.0' } // 伪装防止 403
+            });
+            
+            // 检查文件大小，防止下载到错误的 HTML
+            if (response.data.length < 50000) {
+                throw new Error(`下载文件太小 (${response.data.length} bytes)，可能是错误文件`);
             }
+            
+            fs.writeFileSync(FONT_PATH, response.data);
+            console.log('✅ [System] 字体下载并保存成功！');
+        } catch (e) {
+            console.error(`❌ [System] 字体下载惨败: ${e.message}`);
         }
-    } else {
-        console.log('✅ [System] 字体文件已存在。');
     }
 
-    // 2. 注册字体 (在所有 createCanvas 之前执行)
+    // 2. 注册字体 (关键：必须放在 try-catch 中防止崩坏)
     if (fs.existsSync(FONT_PATH)) {
         try {
             registerFont(FONT_PATH, { family: 'CustomFont' });
-            console.log('✅ [System] registerFont 注册成功 (CustomFont)');
+            console.log('✅ [System] 字体 CustomFont 注册完毕！');
+            return true;
         } catch (e) {
-            console.error('❌ [System] registerFont 失败:', e);
+            console.error('❌ [System] 字体注册出错:', e);
+            return false;
         }
-    } else {
-        console.error('⚠️ [System] 警告：没有可用的字体文件，中文可能会乱码。');
     }
+    return false;
 }
 
 const TEXTS = {
@@ -135,61 +132,6 @@ const TEXTS = {
         map_amap: "高德地图",
         map_google: "谷歌地图",
         user_auth_msg: "✅ 已授权用户 ${name}！(只能用 /hc)"
-    },
-    'zh-TW': {
-        pm_reply: "❌ 🔒本機器人只供匯盈國際內部使用，你沒有權限訪問。如果有疑問，請聯繫匯盈國際負責人授權。🚫🚫",
-        welcome_user: "🚫這是匯盈國際官方對接群 \n\n" +
-                      "👤歡迎 ${name} ${username}！\n\n" +
-                      "⚠️重要提醒：這是匯盈國際官方對接群，你還沒有獲得授權權限，請立即聯繫負責人進行授權！\n\n" +
-                      "🔗聯繫方式：請聯繫匯盈國際負責人或等待通知。\n\n" +
-                      "🚀匯盈國際 - 專業、安全、可靠💎",
-        unauth_msg: "🚫這裡是匯盈國際官方對接群🚫 \n\n" +
-                    "${name} ${username}，👤你還沒有獲得授權！🚫\n\n" +
-                    "💡立即聯繫負責人授權，否則無法發言。🚫\n\n" +
-                    "🚀匯盈國際 - 專業、安全、可靠🚀",
-        auth_success: "✅ 已授權 ✅ 用戶 ${name}！(只能使用 /hc)",
-        agent_auth_msg: "✅ 已授權中介 ✅ 告知：路上只是要換車的請都使用 /zjkh 這個指令把鏈接發給你的兄弟，讓你的兄弟拍照，（溫馨提示：鏈接可以一直使用）",
-        photo_prompt: "為了保障你的安全換車前請拍照！ 換車一定要是上一個司機安排的哦，如果是請點擊下方拍照，如果不是請聯繫負責人",
-        btn_photo: "📷開始拍照",
-        zl_msg: "填寫招聘申請時請打開手機錄屏，按照上面順序排列填寫資料後拍照關閉手機錄屏後發送到此群裡！",
-        zl_instr: "點擊上方鏈接打開瀏覽器進行填寫，填寫時記住要錄屏填寫！填寫好了發到此群！",
-        zj_instr: "發給你的兄弟讓兄弟打開瀏覽器進行填寫，填寫時記住要錄屏填寫！填寫好了發到此群！",
-        zl_btn_title: "👤請選擇申請類型：",
-        zj_btn_title: "👤請選擇中介申請類型：",
-        land_msg: "🚨🔥上車安全提醒 - 必讀！🔥\n\n上車以後不要跟其他人過多交流，不要透露自己來自哪裡，不要透露個人信息，不要透露自己來幹嘛的，路線不只是帶你自己出境的還帶其他人的，車上什麼人都有，有出境上班的，有案子跑路的，所以目的地很多人都是不一樣的，不用過多的跟他們聊天！！\n\n👋歡迎新成員！請注意以上內容，確保安全出行。路上有什麼問題及時報告到此群\n\n匯盈國際 - 專業、安全、可靠",
-        flight_msg: "上車前要拍照到此群核對\n\n請務必在登機前使用 /hc 拍照上傳當前位置！\n\n匯盈國際 - 安全第一",
-        btn_land: "負責人安排走小路",
-        btn_flight: "坐飛機",
-        perm_deny: "❌ 🔒無權限！ /qc 只限匯盈國際負責人使用。",
-        agent_deny: "❌ 無權限！此指令僅限授權中介使用。\n普通用戶請使用 /hc",
-        lj_text: "🔗匯盈國際官方對接群鏈接 \n\n🔗點擊下方按鈕直接加入群！",
-        qc_confirm: "⚠️ **恢復出厂设置**\n\n是否確認清空所有數據？",
-        qc_done: "✅ 出厂设置已完成！所有授權已清空\n臨時任務已清除\nBot 已重置為全新狀態",
-        qc_cancel: "已取消操作。",
-        sx_done: "✅本群鏈接已刷新！舊鏈接已失效⚠️",
-        ban_msg: "用戶已踢出並永久拉黑！",
-        menu_title: "📋匯盈國際官方機器人指令面板",
-        hc_desc: "換車安全拍照",
-        zjkh_desc: "中介專用鏈接",
-        boss_desc: "Boss 查崗",
-        lg_desc: "龍哥查崗",
-        sx_desc: "刷新鏈接 (舊鏈接失效)",
-        zl_desc: "招聘申請",
-        zj_desc: "中介申請",
-        qc_desc: "恢復出廠",
-        lh_desc: "踢出用戶",
-        lj_desc: "進群鏈接",
-        link_title: "🔗 中介兄弟專用鏈接",
-        link_copy: "請複製下方鏈接發送給您的兄弟：",
-        boss_req: "匯盈國際負責人Boss要求你拍照",
-        lg_req: "匯盈國際負責人龍哥要求你拍照",
-        btn_confirm: "✅ 確認重置",
-        btn_cancel: "❌ 取消",
-        upload_title: "换车拍摄图片",
-        loc_fail: "❌無定位⚠️請負責人核實",
-        map_amap: "高德地圖",
-        map_google: "谷歌地圖",
-        user_auth_msg: "✅ 已授權用戶 ${name}！(只能用 /hc)"
     }
 };
 
@@ -347,21 +289,22 @@ bot.action(['set_lang_cn', 'set_lang_tw'], async (ctx) => {
 });
 
 // ==========================================================
-// ✅ 功能 1 修复：/tp 使用 CustomFont (严格格式)
+// ✅ /tp 显影修正版：强制淡黄色背景 + JPEG
 // ==========================================================
 bot.command('tp', async (ctx) => {
+    console.log('[TP] Command triggered!'); // 打印日志
+
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply("❌ 无权限使用此指令。");
     if (!ctx.message.reply_to_message) return ctx.reply("⚠️ 请回复一条 .xlsx 文件消息来执行转换。");
     
-    // 注意：这里不再调用 loadFont，因为已经在启动时完成了
-
     const doc = ctx.message.reply_to_message.document;
     if (!doc || (!doc.file_name.endsWith('.xlsx') && doc.mime_type !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
         return ctx.reply("❌ 请回复有效的 .xlsx Excel 文件。");
     }
 
-    const processingMsg = await ctx.reply("⏳ 正在处理 (v3.1 Final Fix)...");
+    // 提示信息带版本号，确认是否为最新代码
+    const processingMsg = await ctx.reply("⏳ 正在处理 (v3.2 YellowFix)...");
 
     try {
         const fileLink = await ctx.telegram.getFileLink(doc.file_id);
@@ -377,6 +320,7 @@ bot.command('tp', async (ctx) => {
         const padding = 12;
         const rowHeight = 40;
         
+        // 计算宽度
         const colWidths = [];
         json.forEach(row => {
             row.forEach((cell, i) => {
@@ -391,17 +335,18 @@ bot.command('tp', async (ctx) => {
         for(let k=0; k<colWidths.length; k++) { if(!colWidths[k]) colWidths[k] = 100; }
 
         const totalWidth = colWidths.reduce((a, b) => a + b, 0) + padding * 2;
-        const totalHeight = (json.length * rowHeight) + padding * 2 + 30;
+        const totalHeight = (json.length * rowHeight) + padding * 2 + 40; // 底部留白
 
+        // 创建画布
         const canvas = createCanvas(totalWidth, totalHeight);
         const ctx2d = canvas.getContext('2d');
 
-        // 🔥 1. 强制白底
-        ctx2d.fillStyle = '#ffffff'; 
+        // 🔥 1. 强制填充“淡黄色”背景 (#FFFFE0)
+        // 如果你看到的是黑色，说明现在运行的绝对不是这份代码！！
+        ctx2d.fillStyle = '#FFFFE0'; 
         ctx2d.fillRect(0, 0, totalWidth, totalHeight);
 
-        // 🔥 2. 严格的 Font 语法 (只用 CustomFont，不加 fallback)
-        // 这样可以确保如果 CustomFont 加载成功就用它，防止 fallback 导致的黑屏/异常
+        // 🔥 2. 字体设置 (严格指定 CustomFont)
         ctx2d.font = `${fontSize}px CustomFont`; 
         ctx2d.textBaseline = 'middle';
         ctx2d.lineWidth = 1;
@@ -419,9 +364,9 @@ bot.command('tp', async (ctx) => {
         json.forEach((row, rowIndex) => {
             let x = padding;
             
-            // 斑马纹
+            // 斑马纹 (白色)
             if (rowIndex % 2 === 0) {
-                ctx2d.fillStyle = '#f2f2f2'; 
+                ctx2d.fillStyle = '#ffffff'; 
                 ctx2d.fillRect(padding, lineY, totalWidth - padding * 2, rowHeight);
             }
 
@@ -443,14 +388,15 @@ bot.command('tp', async (ctx) => {
             ctx2d.stroke();
         });
 
-        // 底部版本号
-        ctx2d.font = '12px CustomFont'; // 也用 CustomFont
-        ctx2d.fillStyle = '#888888';
-        ctx2d.fillText("Generated by Huiying Bot (v3.1 Final Fix)", padding, totalHeight - 10);
+        // 底部打标记
+        ctx2d.font = '14px CustomFont';
+        ctx2d.fillStyle = '#ff0000'; // 红色字体
+        ctx2d.fillText("Huiying Bot v3.2 - Yellow Fix Mode", padding, totalHeight - 15);
 
+        // 🔥 3. 强制输出 JPEG
         const imgBuffer = canvas.toBuffer('image/jpeg', { quality: 0.95 });
         
-        await ctx.replyWithPhoto({ source: imgBuffer }, { caption: `✅ 转换成功：${doc.file_name}` });
+        await ctx.replyWithPhoto({ source: imgBuffer }, { caption: `✅ 转换成功 (YellowFix)` });
         try { await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id); } catch {}
 
     } catch (error) {
@@ -459,9 +405,6 @@ bot.command('tp', async (ctx) => {
     }
 });
 
-// ==========================================================
-// ✅ 功能：指令快捷键键盘
-// ==========================================================
 bot.command('bz', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
@@ -773,48 +716,11 @@ bot.on('text', async (ctx) => {
     }
 });
 
-const expressApp = express();
-expressApp.use(cors());
-expressApp.use(express.raw({ type: '*/*', limit: '10mb' }));
-
-expressApp.post('/upload', async (req, res) => {
-  try {
-    const photoBuffer = req.body;
-    const { lat, lng, name, uid, time, chatid, token } = req.query;
-    if (!chatid) return res.status(400).json({ code: 1, msg: 'No ChatID' });
-
-    const currentToken = getOrRefreshToken(chatid);
-    if (!token || token !== currentToken) return res.status(403).json({ code: 1, msg: 'Link Expired / 链接失效' });
-
-    const isTest = (!lat || (parseFloat(lat) === 0 && parseFloat(lng) === 0));
-    const locText = isTest ? t(chatid, 'loc_fail') : `${parseFloat(lat).toFixed(6)}, ${parseFloat(lng).toFixed(6)}`;
-    const map1 = t(chatid, 'map_amap');
-    const map2 = t(chatid, 'map_google');
-
-    const userLink = (uid && uid !== '0') ? `<a href="tg://user?id=${uid}">${name}</a>` : name;
-
-    const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
-                    `👤: ${userLink} (ID:${uid})\n` +
-                    `⏰: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
-                    `📍: ${locText}\n` +
-                    `🗺️: <a href="https://amap.com/dir?destination=${lng},${lat}">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}">${map2}</a>`;
-
-    if (GROUP_CHAT_IDS.includes(Number(chatid))) {
-      await sendToChat(Number(chatid), photoBuffer, caption, lat, lng);
-    }
-    await sendToChat(BACKUP_GROUP_ID, photoBuffer, `[Back] ${caption}`, lat, lng);
-    res.json({ code: 0, msg: 'success' });
-  } catch (err) { res.status(500).json({ code: 1, msg: err.message }); }
-});
-
-expressApp.get('/', (req, res) => res.send('Bot OK'));
-const PORT = process.env.PORT || 10000;
-
 // ==========================================================
-// ✅ 程序启动入口：确保字体初始化完成后再启动服务
+// ✅ 程序启动入口 (强同步)
 // ==========================================================
 async function startApp() {
-    await initGlobalFont();
+    await initGlobalFont(); // 必须先下载好字体
 
     expressApp.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);
