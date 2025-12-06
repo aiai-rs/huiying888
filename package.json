@@ -12,8 +12,7 @@
     "cors": "^2.8.5",
     "axios": "^1.6.7",
     "xlsx": "^0.18.5",
-    "canvas": "^2.11.2",
-    "node-html-to-image": "^3.3.0"
+    "canvas": "^2.11.2"
   },
   "engines": {
     "node": ">=18.0.0"
