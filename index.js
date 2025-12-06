@@ -3,14 +3,14 @@ const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+const path = require('path');
 
 // ==========================================================
-// ✅ 修复依赖：使用 canvas 代替 node-html-to-image 以适配 Render
-// 必须确保 package.json 安装了: npm install canvas xlsx axios
+// ✅ 核心依赖：Canvas (纯内存绘图) + XLSX + Axios
 // ==========================================================
 const axios = require('axios');
 const xlsx = require('xlsx');
-const { createCanvas } = require('canvas'); // 纯内存绘图库
+const { createCanvas, registerFont } = require('canvas');
 
 let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -30,6 +30,39 @@ const GROUP_CHAT_IDS = [
 const BACKUP_GROUP_ID = -1003293673373;
 const WEB_APP_URL = 'https://huiying8.netlify.app';
 const AUTH_FILE = './authorized.json';
+
+// ==========================================================
+// ✅ 自动字体下载逻辑 (修复 Render 无中文字体问题)
+// ==========================================================
+const FONT_PATH = path.join(__dirname, 'custom_font.ttf');
+const FONT_URLS = [
+    'https://github.com/google/fonts/raw/main/ofl/notosanssc/NotoSansSC-Regular.ttf',
+    'https://github.com/google/fonts/raw/main/ofl/mashanzheng/MaShanZheng-Regular.ttf',
+    'https://github.com/google/fonts/raw/main/ofl/zcoolxiaowei/ZCOOLXiaoWei-Regular.ttf'
+];
+
+async function loadCustomFont() {
+    if (fs.existsSync(FONT_PATH)) {
+        console.log('✅ 字体文件已存在，跳过下载。');
+        registerFont(FONT_PATH, { family: 'CustomFont' });
+        return;
+    }
+
+    console.log('⏳ 正在下载中文字体 (解决乱码/黑屏)...');
+    for (const url of FONT_URLS) {
+        try {
+            console.log(`尝试下载: ${url}`);
+            const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
+            fs.writeFileSync(FONT_PATH, response.data);
+            console.log('✅ 字体下载成功！');
+            registerFont(FONT_PATH, { family: 'CustomFont' });
+            return;
+        } catch (e) {
+            console.error(`❌ 下载失败 (${url}): ${e.message}`);
+        }
+    }
+    console.error('⚠️ 所有字体下载失败，中文可能会显示为方框。');
+}
 
 const TEXTS = {
     'zh-CN': {
@@ -298,93 +331,106 @@ bot.action(['set_lang_cn', 'set_lang_tw'], async (ctx) => {
 });
 
 // ==========================================================
-// ✅ 功能 1 修复：/tp 使用 Canvas 纯内存生成图片
+// ✅ 功能 1 修复：自动下载字体 + 强制白底 + 纯内存绘图
 // ==========================================================
 bot.command('tp', async (ctx) => {
-    // 1. 权限与输入检查
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply("❌ 无权限使用此指令。");
     if (!ctx.message.reply_to_message) return ctx.reply("⚠️ 请回复一条 .xlsx 文件消息来执行转换。");
+    
+    await loadCustomFont();
+
     const doc = ctx.message.reply_to_message.document;
     if (!doc || (!doc.file_name.endsWith('.xlsx') && doc.mime_type !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
         return ctx.reply("❌ 请回复有效的 .xlsx Excel 文件。");
     }
 
-    const processingMsg = await ctx.reply("⏳ 正在处理 Excel (Canvas模式)...");
+    const processingMsg = await ctx.reply("⏳ 正在处理 Excel (加载中文字体)...");
 
     try {
-        // 2. 内存下载
         const fileLink = await ctx.telegram.getFileLink(doc.file_id);
         const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
-        const buffer = Buffer.from(response.data);
-
-        // 3. 解析 Excel
-        const workbook = xlsx.read(buffer, { type: 'buffer' });
+        
+        const workbook = xlsx.read(response.data, { type: 'buffer' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = xlsx.utils.sheet_to_json(sheet, { header: 1 }); // 二维数组
+        const json = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
         if (!json || json.length === 0) throw new Error("Excel 是空的");
 
-        // 4. Canvas 绘图逻辑
         const fontSize = 16;
-        const padding = 10;
+        const padding = 12;
         const rowHeight = 40;
-        // 估算每列最大宽度
+        
         const colWidths = [];
         json.forEach(row => {
             row.forEach((cell, i) => {
                 const text = String(cell || '');
-                const width = (text.length * fontSize) + (padding * 2); 
+                let len = 0;
+                for(let c of text) len += (c.charCodeAt(0) > 255 ? 2 : 1);
+                const width = (len * fontSize * 0.6) + (padding * 2); 
                 if (!colWidths[i] || width > colWidths[i]) colWidths[i] = width;
             });
         });
+        
+        for(let k=0; k<colWidths.length; k++) { if(!colWidths[k]) colWidths[k] = 100; }
 
-        const totalWidth = colWidths.reduce((a, b) => a + b, 0) + padding;
-        const totalHeight = (json.length * rowHeight) + padding;
+        const totalWidth = colWidths.reduce((a, b) => a + b, 0) + padding * 2;
+        const totalHeight = (json.length * rowHeight) + padding * 2;
 
         const canvas = createCanvas(totalWidth, totalHeight);
         const ctx2d = canvas.getContext('2d');
 
-        // 背景白
-        ctx2d.fillStyle = '#ffffff';
+        // 🔥 1. 填充白底 (修复 Telegram 深色模式黑屏)
+        ctx2d.fillStyle = '#ffffff'; 
         ctx2d.fillRect(0, 0, totalWidth, totalHeight);
 
-        // 绘制文字和线
-        ctx2d.font = `${fontSize}px Arial`;
-        ctx2d.fillStyle = '#000000';
+        // 🔥 2. 使用下载的自定义中文字体 (修复乱码)
+        ctx2d.font = `${fontSize}px "CustomFont", sans-serif`; 
+        ctx2d.textBaseline = 'middle';
+        ctx2d.lineWidth = 1;
         ctx2d.strokeStyle = '#cccccc';
 
-        let y = padding + fontSize;
-        let lineY = 0;
+        let y = padding + rowHeight / 2;
+        let lineY = padding;
+
+        // 顶边框
+        ctx2d.beginPath();
+        ctx2d.moveTo(padding, lineY);
+        ctx2d.lineTo(totalWidth - padding, lineY);
+        ctx2d.stroke();
 
         json.forEach((row, rowIndex) => {
             let x = padding;
-            // 简单隔行换色
-            if (rowIndex % 2 === 0) {
-                ctx2d.fillStyle = '#f2f2f2';
-                ctx2d.fillRect(0, lineY, totalWidth, rowHeight);
-                ctx2d.fillStyle = '#000000';
-            }
             
+            // 斑马纹
+            if (rowIndex % 2 === 0) {
+                ctx2d.fillStyle = '#f9f9f9'; 
+                ctx2d.fillRect(padding, lineY, totalWidth - padding * 2, rowHeight);
+            }
+
+            // 绘制文字 (强制黑色)
+            ctx2d.fillStyle = '#000000';
             row.forEach((cell, colIndex) => {
-                ctx2d.fillText(String(cell || ''), x, y);
+                const text = String(cell || '');
+                ctx2d.fillText(text, x + padding, y);
                 x += colWidths[colIndex];
             });
             
-            // 绘制横线
-            lineY += rowHeight;
-            ctx2d.beginPath();
-            ctx2d.moveTo(0, lineY);
-            ctx2d.lineTo(totalWidth, lineY);
-            ctx2d.stroke();
-            
             y += rowHeight;
+            lineY += rowHeight;
+
+            // 底边框
+            ctx2d.beginPath();
+            ctx2d.strokeStyle = '#cccccc';
+            ctx2d.moveTo(padding, lineY);
+            ctx2d.lineTo(totalWidth - padding, lineY);
+            ctx2d.stroke();
         });
 
-        // 5. 输出图片并发送
-        const imgBuffer = canvas.toBuffer('image/png');
+        const imgBuffer = canvas.toBuffer('image/jpeg', { quality: 0.9 });
+        
         await ctx.replyWithPhoto({ source: imgBuffer }, { caption: `✅ 转换成功：${doc.file_name}` });
-        await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id);
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id); } catch {}
 
     } catch (error) {
         console.error('TP Error:', error);
@@ -392,6 +438,9 @@ bot.command('tp', async (ctx) => {
     }
 });
 
+// ==========================================================
+// ✅ 修改点：/bz 指令添加“指令快捷键键盘”
+// ==========================================================
 bot.command('bz', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
@@ -408,7 +457,19 @@ bot.command('bz', async (ctx) => {
         `/qc - ${t(chatId, 'qc_desc')}\n` +
         `/lh - ${t(chatId, 'lh_desc')}\n` +
         `/lj - ${t(chatId, 'lj_desc')}\n`;
-    ctx.reply(helpText);
+
+    // 使用 reply_markup 弹出 Reply Keyboard
+    // selective: true 确保只有触发该命令的管理员能看到键盘（在群组中需配合 reply 使用）
+    ctx.reply(helpText, {
+        reply_markup: {
+            keyboard: [
+                [{ text: '/qc' }, { text: '/lj' }, { text: '/sx' }]
+            ],
+            resize_keyboard: true, // 键盘自适应高度
+            selective: true // 仅针对该用户显示（配合 reply_to_message_id）
+        },
+        reply_to_message_id: ctx.message.message_id // 强制回复触发者，实现“仅管理员可见”
+    });
 });
 
 bot.command('qc', async (ctx) => {
@@ -581,34 +642,25 @@ bot.command('lh', async (ctx) => {
     } catch(e){}
 });
 
-// ==========================================================
-// ✅ 功能 2 修复：中介授权 Action 处理器
-// 必须放在 bot.on('callback_query') 之前，防止被拦截
-// ==========================================================
 bot.action(/^agent_(land|flight)_(\d+)$/, async (ctx) => {
     const type = ctx.match[1]; // land 或 flight
     const targetUserId = parseInt(ctx.match[2]);
     const chatId = ctx.chat.id;
 
-    // 1. 执行真正的授权
     authorizedUsers.set(targetUserId, 'agent');
     saveAuth();
 
-    // 2. 恢复禁言权限
     try { 
         await bot.telegram.restrictChatMember(chatId, targetUserId, { permissions: { can_send_messages: true, can_send_photos: true, can_send_videos: true, can_send_other_messages: true, can_add_web_page_previews: true, can_invite_users: true } }); 
     } catch (e) {}
 
-    // 3. 根据选择发送不同文案
     if (type === 'land') {
-        // 小路文案
         const landText = "✅ 已授权中介\n" +
                          "🛣️ 路上只要是换车的请都使用 /zjkh\n" +
                          "把链接发给你的兄弟，让他拍照\n" +
                          "（温馨提示：链接可以一直使用）";
         await ctx.reply(landText);
     } else {
-        // 飞机文案
         const flightText = "✈️ 已授权中介（飞机出行）\n" +
                            "上车前要拍照到此群核对\n" +
                            "请务必在登机前和上车核对时使用 /hc\n" +
@@ -623,7 +675,6 @@ bot.action(/^agent_(land|flight)_(\d+)$/, async (ctx) => {
 
 bot.on('callback_query', async (ctx) => {
     const data = ctx.callbackQuery.data;
-    // ⚠️ 防止双重触发：如果数据以 agent_ 开头，说明是上面的处理器负责，这里直接退出
     if (data.startsWith('agent_')) return;
 
     const chatId = ctx.chat.id;
@@ -683,10 +734,6 @@ bot.on('text', async (ctx) => {
         if (!target) return;
 
         if (text === '中介授权') {
-            // ==========================================================
-            // ✅ 功能 2 修复：中介授权不直接通过，而是弹出选择
-            // 移除了这里的 authorizedUsers.set，改为只发消息
-            // ==========================================================
             await ctx.reply("请选择兄弟的出行方式：", {
                 reply_markup: {
                     inline_keyboard: [
@@ -695,7 +742,6 @@ bot.on('text', async (ctx) => {
                     ]
                 }
             });
-            // 移除警告消息（如果存在）
             warningMessages.delete(replyId);
 
         } else if (text === '授权') {
@@ -748,20 +794,22 @@ const PORT = process.env.PORT || 10000;
 expressApp.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 
-    const startBot = async () => {
-        try {
-            await bot.launch({ dropPendingUpdates: true });
-            console.log('Telegram Bot Started Successfully!');
-        } catch (err) {
-            if (err.response && err.response.error_code === 409) {
-                console.log('Conflict 409: Previous bot instance is still active. Waiting 5s for it to close...');
-                setTimeout(startBot, 5000);
-            } else {
-                console.error('Bot 启动失败:', err);
+    loadCustomFont().then(() => {
+        const startBot = async () => {
+            try {
+                await bot.launch({ dropPendingUpdates: true });
+                console.log('Telegram Bot Started Successfully!');
+            } catch (err) {
+                if (err.response && err.response.error_code === 409) {
+                    console.log('Conflict 409: Previous bot instance is still active. Waiting 5s for it to close...');
+                    setTimeout(startBot, 5000);
+                } else {
+                    console.error('Bot 启动失败:', err);
+                }
             }
-        }
-    };
-    startBot();
+        };
+        startBot();
+    });
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
