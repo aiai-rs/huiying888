@@ -6,13 +6,12 @@ const crypto = require('crypto');
 const path = require('path');
 
 // ==========================================================
-// ✅ 核心依赖：Canvas (纯内存绘图) + XLSX + Axios
+// ✅ 核心依赖
 // ==========================================================
 const axios = require('axios');
 const xlsx = require('xlsx');
 const { createCanvas, registerFont } = require('canvas');
 
-// 🔴 全局字体状态变量
 let isFontReady = false; 
 
 let botInstance = null;
@@ -35,7 +34,7 @@ const WEB_APP_URL = 'https://huiying8.netlify.app';
 const AUTH_FILE = './authorized.json';
 
 // ==========================================================
-// ✅ 全局字体初始化
+// ✅ 全局字体初始化 (强制重下，防止坏文件)
 // ==========================================================
 const FONT_PATH = path.join(__dirname, 'custom_font.ttf');
 const FONT_URLS = [
@@ -45,6 +44,18 @@ const FONT_URLS = [
 ];
 
 async function initGlobalFont() {
+    // 🔥 强制清理旧字体，防止文件损坏导致黑屏
+    try {
+        if (fs.existsSync(FONT_PATH)) {
+            const stats = fs.statSync(FONT_PATH);
+            // 如果文件小于 1KB，认为是坏文件，删了重下
+            if (stats.size < 1000) {
+                console.log('🗑️ [System] 检测到字体文件损坏，正在删除重下...');
+                fs.unlinkSync(FONT_PATH);
+            }
+        }
+    } catch(e) { console.error('字体清理检查失败', e); }
+
     if (!fs.existsSync(FONT_PATH)) {
         console.log('⏳ [System] 正在下载中文字体...');
         for (const url of FONT_URLS) {
@@ -70,10 +81,12 @@ async function initGlobalFont() {
             console.log('✅ [System] registerFont 注册成功 (CustomFont)');
         } catch (e) {
             console.error('❌ [System] registerFont 失败:', e);
-            isFontReady = false; 
+            // 就算失败也标记为true，让它用默认字体，别报错
+            isFontReady = true; 
         }
     } else {
-        console.error('⚠️ [System] 警告：没有可用的字体文件，中文可能会乱码。');
+        console.error('⚠️ [System] 警告：没有可用的字体文件。');
+        isFontReady = true; // 强制继续，使用系统字体
     }
 }
 
@@ -344,16 +357,16 @@ bot.action(['set_lang_cn', 'set_lang_tw'], async (ctx) => {
 });
 
 // ==========================================================
-// ✅ 功能 1 修复：/tp 终极修复 (V4.0 - 强制不透明背景)
+// ✅ 功能 1 修复：/tp 最终核弹版 (JPEG + 强制白底)
 // ==========================================================
 bot.command('tp', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply("❌ 无权限使用此指令。");
     if (!ctx.message.reply_to_message) return ctx.reply("⚠️ 请回复一条 .xlsx 文件消息来执行转换。");
 
-    // 🔥 字体检查
+    // 🔥 即使字体没加载完，也要让它跑下去，哪怕用系统字体
     if (!isFontReady) {
-        return ctx.reply("⚠️ 字体尚未加载完成或加载失败，请稍后再试（约 10 秒）。如果持续失败请检查日志。");
+       console.log("⚠️ 字体未就绪，使用默认字体");
     }
 
     const doc = ctx.message.reply_to_message.document;
@@ -362,7 +375,7 @@ bot.command('tp', async (ctx) => {
         return ctx.reply("❌ 请回复有效的 .xlsx Excel 文件。");
     }
 
-    const processingMsg = await ctx.reply("⏳ 正在处理 (v4.0 Alpha Fix)...");
+    const processingMsg = await ctx.reply("⏳ 正在处理 (v5.0 Final Fix)...");
 
     try {
         const fileLink = await ctx.telegram.getFileLink(doc.file_id);
@@ -396,16 +409,15 @@ bot.command('tp', async (ctx) => {
         const totalWidth = colWidths.reduce((a, b) => a + b, 0) + padding * 2;
         const totalHeight = json.length * rowHeight + padding * 2 + 30;
 
-        // 🔴🔴🔴 终极修复：强制关闭 Alpha 通道 (alpha: false)
-        // 这会使默认背景变成不透明（黑色），然后我们立刻填充白色。
+        // 🔥 创建画布 (不带任何 Alpha 参数，保持最原始状态)
         const canvas = createCanvas(totalWidth, totalHeight);
-        const ctx2d = canvas.getContext('2d', { alpha: false }); 
+        const ctx2d = canvas.getContext('2d');
 
-        // 🔴 立即画白底
-        ctx2d.fillStyle = "#ffffff";
+        // 🔥🔥🔥 核心修复：强制白色背景 (100% 覆盖)
+        ctx2d.fillStyle = '#ffffff';
         ctx2d.fillRect(0, 0, totalWidth, totalHeight);
 
-        // 🔴 字体：增加后备字体 (sans-serif)
+        // 🔥 字体设置：如果 CustomFont 挂了，自动回退到 sans-serif (系统默认)
         ctx2d.font = `${fontSize}px "CustomFont", sans-serif`;
         ctx2d.textBaseline = 'middle';
         ctx2d.lineWidth = 1;
@@ -445,10 +457,11 @@ bot.command('tp', async (ctx) => {
 
         ctx2d.font = `12px "CustomFont", sans-serif`;
         ctx2d.fillStyle = "#888";
-        ctx2d.fillText("Generated by Huiying Bot (v4.0 Alpha Fix)", padding, totalHeight - 10);
+        ctx2d.fillText("Generated by Huiying Bot (v5.0 Final)", padding, totalHeight - 10);
 
-        // 🔴 保持 PNG 输出
-        const imgBuffer = canvas.toBuffer('image/png');
+        // 🔥🔥🔥 核心修复：输出为 JPEG 格式
+        // JPEG 不支持透明，所以只要上面 fillRect 了白色，它绝对是白的，不可能是黑的
+        const imgBuffer = canvas.toBuffer('image/jpeg', { quality: 0.95 });
 
         await ctx.replyWithPhoto({ source: imgBuffer }, { caption: `✅ 转换成功：${doc.file_name}` });
         try { await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id); } catch { }
