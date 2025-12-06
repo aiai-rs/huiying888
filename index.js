@@ -114,27 +114,27 @@ const TEXTS = {
         sx_done: "✅本群鏈接已刷新！舊鏈接已失效⚠️",
         ban_msg: "用戶已踢出並永久拉黑！",
         menu_title: "📋匯盈國際官方機器人指令面板",
-        hc_desc: "換車安全拍照",
-        zjkh_desc: "中介專用鏈接",
+        hc_desc: "换车安全拍照",
+        zjkh_desc: "中介专用链接",
         boss_desc: "Boss 查崗",
-        lg_desc: "龍哥查崗",
-        sx_desc: "刷新鏈接 (舊鏈接失效)",
-        zl_desc: "招聘申請",
-        zj_desc: "中介申請",
-        qc_desc: "恢復出厂",
-        lh_desc: "踢出用戶",
-        lj_desc: "進群鏈接",
-        link_title: "🔗 中介兄弟專用鏈接",
-        link_copy: "請複製下方鏈接發送給您的兄弟：",
-        boss_req: "匯盈國際負責人Boss要求你拍照",
-        lg_req: "匯盈國際負責人龍哥要求你拍照",
-        btn_confirm: "✅ 確認重置",
+        lg_desc: "龙哥查岗",
+        sx_desc: "刷新链接 (旧链接失效)",
+        zl_desc: "招聘申请",
+        zj_desc: "中介申请",
+        qc_desc: "恢复出厂",
+        lh_desc: "踢出用户",
+        lj_desc: "进群链接",
+        link_title: "🔗 中介兄弟专用链接",
+        link_copy: "请复制下方链接发送给你的兄弟：",
+        boss_req: "汇盈国际负责人Boss要求你拍照",
+        lg_req: "汇盈国际负责人龍哥要求你拍照",
+        btn_confirm: "✅ 确认重置",
         btn_cancel: "❌ 取消",
         upload_title: "换车拍摄图片",
         loc_fail: "❌無定位⚠️請負責人核實",
         map_amap: "高德地圖",
         map_google: "谷歌地圖",
-        user_auth_msg: "✅ 已授權用戶 ${name}！(只能用 /hc)"
+        user_auth_msg: "✅ 已授权用户 ${name}！(只能用 /hc)"
     }
 };
 
@@ -147,7 +147,6 @@ const unauthorizedMessages = new Map();
 const zlMessages = new Map();
 
 // === 全局变量 ===
-const waitingForExcel = new Set(); // 记录正在等待上传Excel的用户ID
 const tpSessions = {}; // 存储Excel预览会话: { userId: { pages: [], expire: timestamp, msgId: int } }
 const pendingAgentAuth = new Map(); // 存储待确认的中介授权
 
@@ -221,7 +220,6 @@ function factoryReset() {
     warningMessages.clear();
     unauthorizedMessages.clear();
     zlMessages.clear();
-    waitingForExcel.clear();
     for(let k in tpSessions) delete tpSessions[k];
     pendingAgentAuth.clear();
     try { if(fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE); } catch(e){}
@@ -254,7 +252,7 @@ function downloadFileToBuffer(url) {
     });
 }
 
-// === 修改功能 C：医疗内容自动总结（增强版） ===
+// === 医疗内容自动总结（增强版） ===
 function generateMedicalSummary(fullText) {
     const text = fullText.join(' ');
     
@@ -297,11 +295,10 @@ function generateMedicalSummary(fullText) {
     return summaryText;
 }
 
-// === 辅助函数：计算字符串视觉宽度（简单的中英文混排对齐） ===
+// === 辅助函数：计算字符串视觉宽度 ===
 function getVisualWidth(str) {
     let width = 0;
     for (let i = 0; i < str.length; i++) {
-        // ASCII字符看作1，其他（中文等）看作2
         width += str.charCodeAt(i) > 255 ? 2 : 1;
     }
     return width;
@@ -400,29 +397,29 @@ bot.command('bz', async (ctx) => {
     ctx.reply(helpText);
 });
 
+// === 修改：/tp 指令处理（仅群组、仅管理员、需回复文件） ===
 bot.command('tp', async (ctx) => {
-    // === 修改功能 1：/tp 只能在私聊中使用 ===
-    if (ctx.chat.type !== 'private') return;
+    // 1. 必须在群组
+    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
 
-    // === 修改功能 2：/tp 只有指定两人可以使用 ===
-    const ALLOWED_TP_USERS = [7254091077, 6524130228];
-    if (!ALLOWED_TP_USERS.includes(ctx.from.id)) return;
+    // 2. 必须是管理员
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
 
-    waitingForExcel.add(ctx.from.id);
-    await ctx.reply("请发送 .xlsx 文件，我将为您进行内存预览。");
-});
-
-bot.on('document', async (ctx, next) => {
-    const userId = ctx.from.id;
-    if (!waitingForExcel.has(userId)) return next();
-
-    const doc = ctx.message.document;
-    if (!doc.file_name.endsWith('.xlsx')) {
-        return ctx.reply("❌ 请发送 .xlsx 格式的 Excel 文件。");
+    // 3. 必须回复了一条消息，且该消息包含文件
+    const replyMsg = ctx.message.reply_to_message;
+    if (!replyMsg || !replyMsg.document) {
+         return ctx.reply("❌ 请回复一条包含 .xlsx 文件的消息来使用此功能。");
     }
 
+    const doc = replyMsg.document;
+    if (!doc.file_name.endsWith('.xlsx')) {
+        return ctx.reply("❌ 请回复 .xlsx 格式的 Excel 文件。");
+    }
+
+    // 开始处理流程
+    const adminId = ctx.from.id; // Session归属于触发指令的管理员
+    
     try {
-        waitingForExcel.delete(userId);
         const statusMsg = await ctx.reply("⏳ 正在内存解析 Excel，请稍候...");
 
         const fileLink = await bot.telegram.getFileLink(doc.file_id);
@@ -434,8 +431,7 @@ bot.on('document', async (ctx, next) => {
         
         const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
 
-        // === 修改功能 4：Excel 预览表格对齐 ===
-        // 1. 计算每列最大视觉宽度
+        // Excel 预览表格对齐处理
         const colWidths = [];
         jsonData.forEach(row => {
             if (Array.isArray(row)) {
@@ -448,12 +444,10 @@ bot.on('document', async (ctx, next) => {
             }
         });
 
-        // 2. 格式化行，增加 Padding
         const formattedLines = jsonData.map((row, index) => {
             const rowNum = String(index + 1).padStart(2, '0');
             if (Array.isArray(row)) {
                 const rowStr = row.map((cell, i) => {
-                    // 增加2个空格的间距
                     return padString(String(cell), colWidths[i]) + '  '; 
                 }).join('| ');
                 return `[${rowNum}] ${rowStr}`;
@@ -462,20 +456,20 @@ bot.on('document', async (ctx, next) => {
             }
         });
 
-        tpSessions[userId] = {
+        tpSessions[adminId] = {
             pages: [],
             expire: Date.now() + 24 * 60 * 60 * 1000 // 24小时
         };
 
         const pageSize = 20;
         for (let i = 0; i < formattedLines.length; i += pageSize) {
-            tpSessions[userId].pages.push(formattedLines.slice(i, i + pageSize).join('\n'));
+            tpSessions[adminId].pages.push(formattedLines.slice(i, i + pageSize).join('\n'));
         }
 
         try { await bot.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch(e){}
 
-        const pageCount = tpSessions[userId].pages.length;
-        const page1 = tpSessions[userId].pages[0] || "空文件";
+        const pageCount = tpSessions[adminId].pages.length;
+        const page1 = tpSessions[adminId].pages[0] || "空文件";
         
         const previewMsg = await ctx.reply(`📄 文件预览（第 1 页 / 共 ${pageCount} 页）\n\n<pre>${page1}</pre>`, {
             parse_mode: 'HTML',
@@ -490,9 +484,9 @@ bot.on('document', async (ctx, next) => {
             }
         });
 
-        tpSessions[userId].msgId = previewMsg.message_id;
+        tpSessions[adminId].msgId = previewMsg.message_id;
 
-        const summary = generateMedicalSummary(jsonData.flat()); // 使用原始数据生成总结
+        const summary = generateMedicalSummary(jsonData.flat());
         await ctx.reply(summary);
 
     } catch (err) {
