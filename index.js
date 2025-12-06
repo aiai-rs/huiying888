@@ -12,6 +12,9 @@ const axios = require('axios');
 const xlsx = require('xlsx');
 const { createCanvas, registerFont } = require('canvas');
 
+// 🔴 修复 1：定义全局字体状态变量，否则 /tp 找不到这个变量会报错或黑图
+let isFontReady = false; 
+
 let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -71,9 +74,12 @@ async function initGlobalFont() {
     if (fs.existsSync(FONT_PATH)) {
         try {
             registerFont(FONT_PATH, { family: 'CustomFont' });
+            isFontReady = true; // 🔴 修复 2：注册成功后标记状态
             console.log('✅ [System] registerFont 注册成功 (CustomFont)');
         } catch (e) {
             console.error('❌ [System] registerFont 失败:', e);
+            // 如果失败，尝试标记为 false，避免绘图崩溃
+            isFontReady = false; 
         }
     } else {
         console.error('⚠️ [System] 警告：没有可用的字体文件，中文可能会乱码。');
@@ -355,8 +361,9 @@ bot.command('tp', async (ctx) => {
     if (!ctx.message.reply_to_message) return ctx.reply("⚠️ 请回复一条 .xlsx 文件消息来执行转换。");
 
     // 🔥 字体必须已加载，否则黑图
+    // 🔴 修复：isFontReady 必须在全局定义
     if (!isFontReady) {
-        return ctx.reply("⚠️ 字体尚未加载完成，请稍后再试 /tp（约 5~10 秒）");
+        return ctx.reply("⚠️ 字体尚未加载完成或加载失败，请稍后再试（约 10 秒）。如果持续失败请检查日志。");
     }
 
     const doc = ctx.message.reply_to_message.document;
@@ -402,6 +409,7 @@ bot.command('tp', async (ctx) => {
         const canvas = createCanvas(totalWidth, totalHeight);
         const ctx2d = canvas.getContext('2d');
 
+        // 🔴 关键修复：确保背景先填充白色，否则透明背景转 JPG 会变黑
         ctx2d.fillStyle = "#ffffff";
         ctx2d.fillRect(0, 0, totalWidth, totalHeight);
 
@@ -820,14 +828,20 @@ async function startApp() {
 
         const startBot = async () => {
             try {
+                // 🔴 409 修复：确保删除 webhook (如果是 polling 模式) 并丢弃旧消息
+                await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+                console.log('Starting Bot Polling...');
+                
+                // 🔴 409 修复：使用 try-catch 包裹 launch
                 await bot.launch({ dropPendingUpdates: true });
                 console.log('Telegram Bot Started Successfully!');
             } catch (err) {
+                // 409 Conflict: Terminated by other getUpdates request
                 if (err.response && err.response.error_code === 409) {
-                    console.log('Conflict 409: Previous bot instance is still active. Waiting 5s for it to close...');
+                    console.log('⚠️ Conflict 409: 上一个 Bot 实例尚未完全关闭。等待 5 秒后重试...');
                     setTimeout(startBot, 5000);
                 } else {
-                    console.error('Bot 启动失败:', err);
+                    console.error('❌ Bot 启动失败:', err);
                 }
             }
         };
@@ -837,6 +851,6 @@ async function startApp() {
 
 startApp();
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
+// 🔴 409 修复：优雅退出，确保进程结束时杀死 Bot 连接
+process.once('SIGINT', () => { console.log('🛑 SIGINT received'); bot.stop('SIGINT'); process.exit(0); });
+process.once('SIGTERM', () => { console.log('🛑 SIGTERM received'); bot.stop('SIGTERM'); process.exit(0); });
