@@ -290,15 +290,15 @@ function generateMedicalSummary(jsonData) {
     let summaryText = `🧾 重点疾病筛查（忽略普通症状）\n\n`;
 
     if (detectedIssues.length > 0) {
-        summaryText += `🚨 **检测到关键疾病记录**：\n${detectedIssues.join('、')}\n`;
+        summaryText += `🚨 检测到关键疾病记录：\n${detectedIssues.join('、')}\n`;
     } else {
-        summaryText += `✅ **未检测到重大疾病关键词**\n（已自动过滤感冒/发热/咳嗽等普通症状）\n`;
+        summaryText += `✅ 未检测到重大疾病关键词\n（已过滤感冒/发热/咳嗽等普通症状）\n`;
     }
 
     if(lastVisitDate) {
-        summaryText += `\n📅 **最后一次看病时间**：${lastVisitDate}\n`;
+        summaryText += `\n📅 最后一次看病时间：${lastVisitDate}\n`;
     } else {
-        summaryText += `\n📅 **最后一次看病时间**：未检测到有效日期\n`;
+        summaryText += `\n📅 最后一次看病时间：未检测到有效日期\n`;
     }
 
     summaryText += `\n⚠️ 注意：此分析仅基于文本，不构成医疗建议。`;
@@ -454,7 +454,7 @@ bot.command('tp', async (ctx) => {
     const fileName = doc.file_name.replace('.xlsx', ''); 
     
     try {
-        const statusMsg = await ctx.reply("⏳ 正在内存解析 Excel，请稍候...");
+        const statusMsg = await ctx.reply("⏳ 正在解析 Excel，请稍候...");
 
         const fileLink = await bot.telegram.getFileLink(doc.file_id);
         const buffer = await downloadFileToBuffer(fileLink.href);
@@ -477,7 +477,7 @@ bot.command('tp', async (ctx) => {
         try { await bot.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch(e){}
 
         const previewMsg = await ctx.reply(
-            `📄 ${fileName}的医疗文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>\n\n⚠️ **提示：转发此消息会丢失翻页按钮，请直接将用户拉入群内查看，或截图分享。**`, 
+            `📄 ${fileName}的医疗文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>\n\n`, 
             {
                 parse_mode: 'HTML',
                 reply_markup: {
@@ -533,7 +533,7 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
         if (newPage < 1) newPage = 1;
         if (newPage > totalPages) newPage = totalPages;
         if (newPage === currentPage && action !== 'toggle_mode') {
-            return ctx.answerCbQuery("已经是尽头了");
+            return ctx.answerCbQuery("没了");
         }
     }
 
@@ -541,7 +541,7 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
 
     try {
         await ctx.editMessageText(
-            `📄 ${targetSession.fileName}的医疗文件预览（第 ${newPage} 页 / 共 ${totalPages} 页）\n\n<pre>${content}</pre>\n\n⚠️ **提示：转发此消息会丢失翻页按钮，请直接将用户拉入群内查看，或截图分享。**`, 
+            `📄 ${targetSession.fileName}的医疗文件预览（第 ${newPage} 页 / 共 ${totalPages} 页）\n\n<pre>${content}</pre>\n\n`, 
             {
                 parse_mode: 'HTML',
                 reply_markup: {
@@ -794,7 +794,7 @@ bot.on('callback_query', async (ctx) => {
         if (data === 'agent_land') {
             await ctx.reply(`✅ 已授权中介\n🛣️ 路上只要是换车的请都使用 /zjkh\n把链接发给你的兄弟，让他拍照\n（温馨提示：链接可以一直使用）`);
         } else {
-            await ctx.reply(`✈️ 已授权中介（飞机出行）\n上车前要拍照到此群核对\n请务必在登机前和上车核对时使用 /hc\n拍照上传当前位置和图片！\n汇盈国际 - 安全第一`);
+            await ctx.reply(`✈️ 已授权中介（飞机出行）\n上车前要拍照到此群核对\n请务必在登机前和上车核对时使用 /zjkh\n拍照上传当前位置和图片！\n汇盈国际 - 安全第一`);
         }
         
         pendingAgentAuth.delete(promptMsgId);
@@ -849,7 +849,7 @@ bot.on('text', async (ctx) => {
         if (!target) return;
 
         if (text === '中介授权') {
-            const promptMsg = await ctx.reply("请选择兄弟的出行方式：", {
+            const promptMsg = await ctx.reply("请选择的兄弟的出行方式：", {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: "🛣️ 走小路", callback_data: "agent_land" }],
@@ -928,3 +928,4 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
