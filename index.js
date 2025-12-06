@@ -1,18 +1,10 @@
-const { Telegraf } = require('telegraf');
+const { Telegraf, Markup } = require('telegraf'); // 确保引入 Markup
 const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
-const path = require('path');
-
-// ==========================================================
-// ✅ 核心依赖
-// ==========================================================
-const axios = require('axios');
-const xlsx = require('xlsx');
-const { createCanvas, registerFont } = require('canvas');
-
-let isFontReady = false; 
+const xlsx = require('xlsx'); // 用于解析 Excel
+const https = require('https'); // 用于内存下载文件
 
 let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -32,63 +24,6 @@ const GROUP_CHAT_IDS = [
 const BACKUP_GROUP_ID = -1003293673373;
 const WEB_APP_URL = 'https://huiying8.netlify.app';
 const AUTH_FILE = './authorized.json';
-
-// ==========================================================
-// ✅ 全局字体初始化 (强制重下，防止坏文件)
-// ==========================================================
-const FONT_PATH = path.join(__dirname, 'custom_font.ttf');
-const FONT_URLS = [
-    'https://github.com/google/fonts/raw/main/ofl/zcoolkuaile/ZCOOLKuaiLe-Regular.ttf',
-    'https://github.com/google/fonts/raw/main/ofl/mashanzheng/MaShanZheng-Regular.ttf',
-    'https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/Simplified/NotoSansCJKsc-Regular.otf'
-];
-
-async function initGlobalFont() {
-    // 🔥 强制清理旧字体，防止文件损坏导致黑屏
-    try {
-        if (fs.existsSync(FONT_PATH)) {
-            const stats = fs.statSync(FONT_PATH);
-            // 如果文件小于 1KB，认为是坏文件，删了重下
-            if (stats.size < 1000) {
-                console.log('🗑️ [System] 检测到字体文件损坏，正在删除重下...');
-                fs.unlinkSync(FONT_PATH);
-            }
-        }
-    } catch(e) { console.error('字体清理检查失败', e); }
-
-    if (!fs.existsSync(FONT_PATH)) {
-        console.log('⏳ [System] 正在下载中文字体...');
-        for (const url of FONT_URLS) {
-            try {
-                console.log(`   尝试下载: ${url}`);
-                const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
-                if (response.data.length < 1000) throw new Error("文件过小");
-                fs.writeFileSync(FONT_PATH, response.data);
-                console.log('✅ [System] 字体下载成功！');
-                break; 
-            } catch (e) {
-                console.error(`❌ [System] 下载失败: ${e.message}`);
-            }
-        }
-    } else {
-        console.log('✅ [System] 字体文件已存在。');
-    }
-
-    if (fs.existsSync(FONT_PATH)) {
-        try {
-            registerFont(FONT_PATH, { family: 'CustomFont' });
-            isFontReady = true; 
-            console.log('✅ [System] registerFont 注册成功 (CustomFont)');
-        } catch (e) {
-            console.error('❌ [System] registerFont 失败:', e);
-            // 就算失败也标记为true，让它用默认字体，别报错
-            isFontReady = true; 
-        }
-    } else {
-        console.error('⚠️ [System] 警告：没有可用的字体文件。');
-        isFontReady = true; // 强制继续，使用系统字体
-    }
-}
 
 const TEXTS = {
     'zh-CN': {
@@ -126,7 +61,7 @@ const TEXTS = {
         menu_title: "📋汇盈国际官方机器人指令面板",
         hc_desc: "换车安全拍照",
         zjkh_desc: "中介专用链接",
-        boss_desc: "Boss 查崗",
+        boss_desc: "Boss 查岗",
         lg_desc: "龙哥查岗",
         sx_desc: "刷新链接 (旧链接失效)",
         zl_desc: "招聘申请",
@@ -211,6 +146,23 @@ const warningMessages = new Map();
 const unauthorizedMessages = new Map();
 const zlMessages = new Map();
 
+// === 全局变量 ===
+const waitingForExcel = new Set(); // 记录正在等待上传Excel的用户ID
+const tpSessions = {}; // 存储Excel预览会话: { userId: { pages: [], expire: timestamp, msgId: int } }
+const pendingAgentAuth = new Map(); // 存储待确认的中介授权
+
+// === 新增：自动清理过期 session (24小时) ===
+setInterval(() => {
+    const now = Date.now();
+    for (const userId in tpSessions) {
+        if (tpSessions[userId].expire < now) {
+            delete tpSessions[userId];
+            // 无需通知用户，静默删除
+        }
+    }
+}, 60 * 60 * 1000); // 每小时检查一次
+// ===========================================
+
 const ZL_LINKS = { '租车': 'https://che88.netlify.app', '大飞': 'https://fei88.netlify.app', '走药': 'https://yao88.netlify.app', '背债': 'https://bei88.netlify.app' };
 const ZJ_LINKS = { '租车': 'https://zjc88.netlify.app', '大飞': 'https://zjf88.netlify.app', '走药': 'https://zjy88.netlify.app', '背债': 'https://zjb88.netlify.app' };
 
@@ -223,7 +175,7 @@ function t(chatId, key, params = {}) {
     const lang = getLang(chatId);
     let text = TEXTS[lang][key] || TEXTS['zh-CN'][key] || key;
     for (const [k, v] of Object.entries(params)) {
-        text = text.replace(`\${${k}}`, v);
+        text = text.replace(new RegExp(`\\$\\{${k}\\}`, 'g'), v);
     }
     return text;
 }
@@ -271,6 +223,9 @@ function factoryReset() {
     warningMessages.clear();
     unauthorizedMessages.clear();
     zlMessages.clear();
+    waitingForExcel.clear();
+    for(let k in tpSessions) delete tpSessions[k];
+    pendingAgentAuth.clear();
     try { if(fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE); } catch(e){}
 }
 
@@ -288,6 +243,40 @@ async function isAdmin(chatId, userId) {
         const member = await bot.telegram.getChatMember(chatId, userId);
         return member.status === 'administrator' || member.status === 'creator';
     } catch (e) { return false; }
+}
+
+function downloadFileToBuffer(url) {
+    return new Promise((resolve, reject) => {
+        https.get(url, (res) => {
+            const chunks = [];
+            res.on('data', (d) => chunks.push(d));
+            res.on('end', () => resolve(Buffer.concat(chunks)));
+            res.on('error', (e) => reject(e));
+        });
+    });
+}
+
+function generateMedicalSummary(fullText) {
+    const text = fullText.join(' ');
+    const keywords = [];
+    if (text.match(/血常规|白细胞|红细胞|血小板/i)) keywords.push("血常规");
+    if (text.match(/尿检|尿蛋白|尿比重/i)) keywords.push("尿液分析");
+    if (text.match(/ALT|AST|转氨酶|胆红素/i)) keywords.push("肝功能");
+    if (text.match(/肌酐|尿素/i)) keywords.push("肾功能");
+    if (text.match(/血糖|甘油三酯|胆固醇/i)) keywords.push("血脂/血糖");
+    if (text.match(/超声|CT|MRI/i)) keywords.push("影像学检查");
+
+    const abnormal = [];
+    if (text.match(/↑|高|H\b/)) abnormal.push("存在偏高指标");
+    if (text.match(/↓|低|L\b/)) abnormal.push("存在偏低指标");
+    if (text.match(/阳性|Positive|\+/i)) abnormal.push("可能存在阳性结果");
+
+    return `🧾 医疗内容自动分析（非医疗建议）\n\n` +
+           `· 检查项目摘要：${keywords.length > 0 ? keywords.join('、') : '未识别到具体项目'}\n` +
+           `· 文本中出现的医学关键词：${keywords.slice(0, 3).join(' ')} ...\n` +
+           `· 表格中可能存在的异常值（仅根据文字判断）：${abnormal.length > 0 ? abnormal.join('、') : '未检测到明显异常标记'}\n` +
+           `· 文件内容可能相关的医学主题：${keywords.join('/')}\n\n` +
+           `⚠️ 注意：以上总结仅依据文件文本，不构成诊断、治疗或医学建议。`;
 }
 
 bot.use(async (ctx, next) => {
@@ -356,125 +345,6 @@ bot.action(['set_lang_cn', 'set_lang_tw'], async (ctx) => {
     });
 });
 
-// ==========================================================
-// ✅ 功能 1 修复：/tp 最终核弹版 (JPEG + 强制白底)
-// ==========================================================
-bot.command('tp', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply("❌ 无权限使用此指令。");
-    if (!ctx.message.reply_to_message) return ctx.reply("⚠️ 请回复一条 .xlsx 文件消息来执行转换。");
-
-    // 🔥 即使字体没加载完，也要让它跑下去，哪怕用系统字体
-    if (!isFontReady) {
-       console.log("⚠️ 字体未就绪，使用默认字体");
-    }
-
-    const doc = ctx.message.reply_to_message.document;
-    if (!doc || (!doc.file_name.endsWith('.xlsx') &&
-        doc.mime_type !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
-        return ctx.reply("❌ 请回复有效的 .xlsx Excel 文件。");
-    }
-
-    const processingMsg = await ctx.reply("⏳ 正在处理 (v5.0 Final Fix)...");
-
-    try {
-        const fileLink = await ctx.telegram.getFileLink(doc.file_id);
-        const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
-
-        const workbook = xlsx.read(response.data, { type: 'buffer' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-
-        if (!json || json.length === 0) throw new Error("Excel 是空的");
-
-        const fontSize = 16;
-        const padding = 12;
-        const rowHeight = 40;
-
-        const colWidths = [];
-        json.forEach(row => {
-            row.forEach((cell, i) => {
-                const text = String(cell || '');
-                let len = 0;
-                for (let c of text) len += (c.charCodeAt(0) > 255 ? 2 : 1);
-                const width = (len * fontSize * 0.7) + padding * 2;
-                if (!colWidths[i] || width > colWidths[i]) colWidths[i] = width;
-            });
-        });
-
-        for (let k = 0; k < colWidths.length; k++) {
-            if (!colWidths[k]) colWidths[k] = 100;
-        }
-
-        const totalWidth = colWidths.reduce((a, b) => a + b, 0) + padding * 2;
-        const totalHeight = json.length * rowHeight + padding * 2 + 30;
-
-        // 🔥 创建画布 (不带任何 Alpha 参数，保持最原始状态)
-        const canvas = createCanvas(totalWidth, totalHeight);
-        const ctx2d = canvas.getContext('2d');
-
-        // 🔥🔥🔥 核心修复：强制白色背景 (100% 覆盖)
-        ctx2d.fillStyle = '#ffffff';
-        ctx2d.fillRect(0, 0, totalWidth, totalHeight);
-
-        // 🔥 字体设置：如果 CustomFont 挂了，自动回退到 sans-serif (系统默认)
-        ctx2d.font = `${fontSize}px "CustomFont", sans-serif`;
-        ctx2d.textBaseline = 'middle';
-        ctx2d.lineWidth = 1;
-        ctx2d.strokeStyle = '#cccccc';
-
-        let y = padding + rowHeight / 2;
-        let lineY = padding;
-
-        ctx2d.beginPath();
-        ctx2d.moveTo(padding, lineY);
-        ctx2d.lineTo(totalWidth - padding, lineY);
-        ctx2d.stroke();
-
-        json.forEach((row, rowIndex) => {
-            let x = padding;
-
-            if (rowIndex % 2 === 0) {
-                ctx2d.fillStyle = '#f2f2f2';
-                ctx2d.fillRect(padding, lineY, totalWidth - padding * 2, rowHeight);
-            }
-
-            ctx2d.fillStyle = '#000000';
-            row.forEach((cell, colIndex) => {
-                const text = String(cell || '');
-                ctx2d.fillText(text, x + padding, y);
-                x += colWidths[colIndex];
-            });
-
-            y += rowHeight;
-            lineY += rowHeight;
-
-            ctx2d.beginPath();
-            ctx2d.moveTo(padding, lineY);
-            ctx2d.lineTo(totalWidth - padding, lineY);
-            ctx2d.stroke();
-        });
-
-        ctx2d.font = `12px "CustomFont", sans-serif`;
-        ctx2d.fillStyle = "#888";
-        ctx2d.fillText("Generated by Huiying Bot (v5.0 Final)", padding, totalHeight - 10);
-
-        // 🔥🔥🔥 核心修复：输出为 JPEG 格式
-        // JPEG 不支持透明，所以只要上面 fillRect 了白色，它绝对是白的，不可能是黑的
-        const imgBuffer = canvas.toBuffer('image/jpeg', { quality: 0.95 });
-
-        await ctx.replyWithPhoto({ source: imgBuffer }, { caption: `✅ 转换成功：${doc.file_name}` });
-        try { await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id); } catch { }
-
-    } catch (error) {
-        console.error("TP Error:", error);
-        await ctx.reply(`❌ 转换失败: ${error.message}`);
-    }
-});
-
-// ==========================================================
-// ✅ 功能：指令快捷键键盘
-// ==========================================================
 bot.command('bz', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
@@ -490,18 +360,150 @@ bot.command('bz', async (ctx) => {
         `/zj - ${t(chatId, 'zj_desc')}\n` +
         `/qc - ${t(chatId, 'qc_desc')}\n` +
         `/lh - ${t(chatId, 'lh_desc')}\n` +
-        `/lj - ${t(chatId, 'lj_desc')}\n`;
+        `/lj - ${t(chatId, 'lj_desc')}\n` + 
+        `/tp - Excel预览 (新增)\n`;
+    ctx.reply(helpText);
+});
 
-    ctx.reply(helpText, {
-        reply_markup: {
-            keyboard: [
-                [{ text: '/qc' }, { text: '/lj' }, { text: '/sx' }]
-            ],
-            resize_keyboard: true,
-            selective: true
-        },
-        reply_to_message_id: ctx.message.message_id
-    });
+bot.command('tp', async (ctx) => {
+    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
+    waitingForExcel.add(ctx.from.id);
+    await ctx.reply("请发送 .xlsx 文件，我将为您进行内存预览。");
+});
+
+bot.on('document', async (ctx, next) => {
+    const userId = ctx.from.id;
+    if (!waitingForExcel.has(userId)) return next();
+
+    const doc = ctx.message.document;
+    if (!doc.file_name.endsWith('.xlsx')) {
+        return ctx.reply("❌ 请发送 .xlsx 格式的 Excel 文件。");
+    }
+
+    try {
+        waitingForExcel.delete(userId);
+        const statusMsg = await ctx.reply("⏳ 正在内存解析 Excel，请稍候...");
+
+        const fileLink = await bot.telegram.getFileLink(doc.file_id);
+        const buffer = await downloadFileToBuffer(fileLink.href);
+
+        const workbook = xlsx.read(buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        
+        const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+        const formattedLines = jsonData.map((row, index) => {
+            const rowStr = Array.isArray(row) ? row.join(' | ') : String(row);
+            return `${index + 1}: ${rowStr}`;
+        });
+
+        // 新增：session 手动删除功能（有效期改为24小时）
+        tpSessions[userId] = {
+            pages: [],
+            expire: Date.now() + 24 * 60 * 60 * 1000 // 24小时
+        };
+
+        const pageSize = 20;
+        for (let i = 0; i < formattedLines.length; i += pageSize) {
+            tpSessions[userId].pages.push(formattedLines.slice(i, i + pageSize).join('\n'));
+        }
+
+        try { await bot.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch(e){}
+
+        const pageCount = tpSessions[userId].pages.length;
+        const page1 = tpSessions[userId].pages[0] || "空文件";
+        
+        // 新增：发送预览时加入删除按钮，并记录消息ID
+        const previewMsg = await ctx.reply(`📄 文件预览（第 1 页 / 共 ${pageCount} 页）\n\n${page1}`, {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '⬅️ 上一页', callback_data: 'tp_prev_1' },
+                        { text: '下一页 ➡️', callback_data: 'tp_next_1' }
+                    ],
+                    // 新增：删除按钮
+                    [{ text: '🗑️ 删除预览会话', callback_data: 'tp_delete_session' }]
+                ]
+            }
+        });
+
+        // 记录消息ID，以便管理员删除时进行反查验证
+        tpSessions[userId].msgId = previewMsg.message_id;
+
+        const summary = generateMedicalSummary(formattedLines);
+        await ctx.reply(summary);
+
+    } catch (err) {
+        console.error(err);
+        ctx.reply("❌ 解析失败，请重试。");
+    }
+});
+
+// 新增：session 手动删除功能
+bot.action('tp_delete_session', async (ctx) => {
+    const currentMsgId = ctx.callbackQuery.message.message_id;
+    const operatorId = ctx.from.id;
+    const isAdminUser = await isAdmin(ctx.chat.id, operatorId);
+
+    // 反查这是谁的 session（根据消息ID）
+    let targetUserId = null;
+    for (const [uid, session] of Object.entries(tpSessions)) {
+        if (session.msgId === currentMsgId) {
+            targetUserId = Number(uid);
+            break;
+        }
+    }
+
+    // 权限检查：必须是 session 拥有者 或 管理员
+    if (!targetUserId || (operatorId !== targetUserId && !isAdminUser)) {
+        return ctx.answerCbQuery("❌ 无权限或会话已过期");
+    }
+
+    // 删除 session 和 消息
+    delete tpSessions[targetUserId];
+    try { await ctx.deleteMessage(); } catch(e) {}
+    
+    // 回复确认
+    await ctx.reply("🗑️ 文件预览已删除");
+    return ctx.answerCbQuery();
+});
+
+bot.action(/^tp_(prev|next)_(\d+)$/, async (ctx) => {
+    const action = ctx.match[1];
+    let currentPage = parseInt(ctx.match[2]);
+    const userId = ctx.from.id;
+    
+    let session = tpSessions[userId];
+    
+    if (!session || Date.now() > session.expire) {
+        return ctx.answerCbQuery("⚠️ Session 已过期或您不是上传者，请重新 /tp");
+    }
+
+    const totalPages = session.pages.length;
+    let newPage = action === 'prev' ? currentPage - 1 : currentPage + 1;
+
+    if (newPage < 1) newPage = 1;
+    if (newPage > totalPages) newPage = totalPages;
+
+    if (newPage === currentPage) {
+        return ctx.answerCbQuery("已经是尽头了");
+    }
+
+    const content = session.pages[newPage - 1];
+    try {
+        await ctx.editMessageText(`📄 文件预览（第 ${newPage} 页 / 共 ${totalPages} 页）\n\n${content}`, {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '⬅️ 上一页', callback_data: `tp_prev_${newPage}` },
+                        { text: '下一页 ➡️', callback_data: `tp_next_${newPage}` }
+                    ],
+                    // 新增：删除按钮 (保持存在)
+                    [{ text: '🗑️ 删除预览会话', callback_data: 'tp_delete_session' }]
+                ]
+            }
+        });
+    } catch(e) {}
 });
 
 bot.command('qc', async (ctx) => {
@@ -603,7 +605,7 @@ bot.command('zjkh', async (ctx) => {
     if (role !== 'agent' && !isAdminUser) return ctx.reply(t(chatId, 'agent_deny'));
 
     const token = getOrRefreshToken(chatId);
-    const link = `${WEB_APP_URL}/?chatid=${chatId}&uid=${userId}&name=${encodeURIComponent(`中介-${ctx.from.first_name}`)}&token=${token}`;
+    const link = `${WEB_APP_URL}/?chatid=${chatId}&uid=${userId}&name=${encodeURIComponent('中介-'+ctx.from.first_name)}&token=${token}`;
 
     ctx.reply(`${t(chatId, 'link_title')}\n\n${t(chatId, 'link_copy')}\n${link}`, { disable_web_page_preview: true });
 });
@@ -674,41 +676,8 @@ bot.command('lh', async (ctx) => {
     } catch(e){}
 });
 
-bot.action(/^agent_(land|flight)_(\d+)$/, async (ctx) => {
-    const type = ctx.match[1]; // land 或 flight
-    const targetUserId = parseInt(ctx.match[2]);
-    const chatId = ctx.chat.id;
-
-    authorizedUsers.set(targetUserId, 'agent');
-    saveAuth();
-
-    try { 
-        await bot.telegram.restrictChatMember(chatId, targetUserId, { permissions: { can_send_messages: true, can_send_photos: true, can_send_videos: true, can_send_other_messages: true, can_add_web_page_previews: true, can_invite_users: true } }); 
-    } catch (e) {}
-
-    if (type === 'land') {
-        const landText = "✅ 已授权中介\n" +
-                         "🛣️ 路上只要是换车的请都使用 /zjkh\n" +
-                         "把链接发给你的兄弟，让他拍照\n" +
-                         "（温馨提示：链接可以一直使用）";
-        await ctx.reply(landText);
-    } else {
-        const flightText = "✈️ 已授权中介（飞机出行）\n" +
-                           "上车前要拍照到此群核对\n" +
-                           "请务必在登机前和上车核对时使用 /hc\n" +
-                           "拍照上传当前位置和图片！\n" +
-                           "汇盈国际 - 安全第一";
-        await ctx.reply(flightText);
-    }
-
-    try { await ctx.answerCbQuery(); } catch(e){}
-    try { await ctx.deleteMessage(); } catch(e){}
-});
-
 bot.on('callback_query', async (ctx) => {
     const data = ctx.callbackQuery.data;
-    if (data.startsWith('agent_')) return;
-
     const chatId = ctx.chat.id;
 
     if (data === 'travel_land' || data === 'travel_flight') {
@@ -716,6 +685,38 @@ bot.on('callback_query', async (ctx) => {
         try { await ctx.deleteMessage(); } catch(e){}
         const m = await ctx.reply(text);
         try { await bot.telegram.pinChatMessage(chatId, m.message_id); } catch(e){}
+    }
+    
+    if (data === 'agent_land' || data === 'agent_flight') {
+        const promptMsgId = ctx.callbackQuery.message.message_id;
+        const target = pendingAgentAuth.get(promptMsgId);
+        
+        if (!target) {
+            try { await ctx.deleteMessage(); } catch(e) {}
+            return ctx.answerCbQuery("操作已过期或找不到目标用户");
+        }
+        
+        const isClickerAdmin = await isAdmin(ctx.chat.id, ctx.from.id);
+        const isClickerTarget = ctx.from.id === target.userId;
+
+        if (!isClickerAdmin && !isClickerTarget) {
+            return ctx.answerCbQuery("❌ 无权限！只有管理员或被授权人可以操作");
+        }
+
+        authorizedUsers.set(target.userId, 'agent');
+        saveAuth();
+        try { await bot.telegram.restrictChatMember(chatId, target.userId, { permissions: { can_send_messages: true, can_send_photos: true, can_send_videos: true, can_send_other_messages: true, can_add_web_page_previews: true, can_invite_users: true } }); } catch (e) {}
+        
+        try { await ctx.deleteMessage(); } catch(e) {}
+        
+        if (data === 'agent_land') {
+            await ctx.reply(`✅ 已授权中介\n🛣️ 路上只要是换车的请都使用 /zjkh\n把链接发给你的兄弟，让他拍照\n（温馨提示：链接可以一直使用）`);
+        } else {
+            await ctx.reply(`✈️ 已授权中介（飞机出行）\n上车前要拍照到此群核对\n请务必在登机前和上车核对时使用 /hc\n拍照上传当前位置和图片！\n汇盈国际 - 安全第一`);
+        }
+        
+        pendingAgentAuth.delete(promptMsgId);
+        return ctx.answerCbQuery("授权完成");
     }
 
     if (data.startsWith('zl_') || data.startsWith('zj_')) {
@@ -760,22 +761,23 @@ bot.on('text', async (ctx) => {
         const chatId = ctx.chat.id;
 
         let target = warningMessages.get(replyId) ||
-                     unauthorizedMessages.get(replyId) ||
-                     { userId: ctx.message.reply_to_message.from.id, userName: ctx.message.reply_to_message.from.first_name };
+                      unauthorizedMessages.get(replyId) ||
+                      { userId: ctx.message.reply_to_message.from.id, userName: ctx.message.reply_to_message.from.first_name };
 
         if (!target) return;
 
         if (text === '中介授权') {
-            await ctx.reply("请选择兄弟的出行方式：", {
+            const promptMsg = await ctx.reply("请选择兄弟的出行方式：", {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: "🛣️ 走小路", callback_data: `agent_land_${target.userId}` }], 
-                        [{ text: "✈️ 坐飞机", callback_data: `agent_flight_${target.userId}` }]
+                        [{ text: "🛣️ 走小路", callback_data: "agent_land" }],
+                        [{ text: "✈️ 坐飞机", callback_data: "agent_flight" }]
                     ]
                 }
             });
+            pendingAgentAuth.set(promptMsg.message_id, target);
             warningMessages.delete(replyId);
-
+            
         } else if (text === '授权') {
             authorizedUsers.set(target.userId, 'user');
             saveAuth();
@@ -810,7 +812,7 @@ expressApp.post('/upload', async (req, res) => {
                     `👤: ${userLink} (ID:${uid})\n` +
                     `⏰: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
                     `📍: ${locText}\n` +
-                    `🗺️: <a href="https://amap.com/dir?destination=${lng},${lat}">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}">${map2}</a>`;
+                    `🗺️: <a href="https://amap.com/dir?destination=${lng},${lat}">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=$?q=${lat},${lng}">${map2}</a>`;
 
     if (GROUP_CHAT_IDS.includes(Number(chatid))) {
       await sendToChat(Number(chatid), photoBuffer, caption, lat, lng);
@@ -823,39 +825,24 @@ expressApp.post('/upload', async (req, res) => {
 expressApp.get('/', (req, res) => res.send('Bot OK'));
 const PORT = process.env.PORT || 10000;
 
-// ==========================================================
-// ✅ 程序启动入口
-// ==========================================================
-async function startApp() {
-    await initGlobalFont();
+expressApp.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 
-    expressApp.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-
-        const startBot = async () => {
-            try {
-                // 🔴 409 修复：确保删除 webhook，防止冲突
-                await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-                console.log('Starting Bot Polling...');
-                
-                await bot.launch({ dropPendingUpdates: true });
-                console.log('Telegram Bot Started Successfully!');
-            } catch (err) {
-                // 409 Conflict: Terminated by other getUpdates request
-                if (err.response && err.response.error_code === 409) {
-                    console.log('⚠️ Conflict 409: 上一个 Bot 实例尚未完全关闭。等待 5 秒后重试...');
-                    setTimeout(startBot, 5000);
-                } else {
-                    console.error('❌ Bot 启动失败:', err);
-                }
+    const startBot = async () => {
+        try {
+            await bot.launch({ dropPendingUpdates: true });
+            console.log('Telegram Bot Started Successfully!');
+        } catch (err) {
+            if (err.response && err.response.error_code === 409) {
+                console.log('Conflict 409: Previous bot instance is still active. Waiting 5s for it to close...');
+                setTimeout(startBot, 5000);
+            } else {
+                console.error('Bot 启动失败:', err);
             }
-        };
-        startBot();
-    });
-}
+        }
+    };
+    startBot();
+});
 
-startApp();
-
-// 🔴 优雅退出
-process.once('SIGINT', () => { console.log('🛑 SIGINT received'); bot.stop('SIGINT'); process.exit(0); });
-process.once('SIGTERM', () => { console.log('🛑 SIGTERM received'); bot.stop('SIGTERM'); process.exit(0); });
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
