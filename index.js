@@ -32,36 +32,52 @@ const WEB_APP_URL = 'https://huiying8.netlify.app';
 const AUTH_FILE = './authorized.json';
 
 // ==========================================================
-// ✅ 自动字体下载逻辑 (修复 Render 无中文字体问题)
+// ✅ 全局字体初始化 (必须在程序启动最开始执行)
 // ==========================================================
 const FONT_PATH = path.join(__dirname, 'custom_font.ttf');
+// 优化后的字体链接列表 (优先使用更稳定的 GitHub Raw 链接)
 const FONT_URLS = [
-    'https://github.com/google/fonts/raw/main/ofl/notosanssc/NotoSansSC-Regular.ttf',
+    // 站酷快乐体 (中文支持好，文件适中)
+    'https://github.com/google/fonts/raw/main/ofl/zcoolkuaile/ZCOOLKuaiLe-Regular.ttf',
+    // 马善政毛笔体
     'https://github.com/google/fonts/raw/main/ofl/mashanzheng/MaShanZheng-Regular.ttf',
-    'https://github.com/google/fonts/raw/main/ofl/zcoolxiaowei/ZCOOLXiaoWei-Regular.ttf'
+    // Noto Sans SC (备用，文件较大)
+    'https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/Simplified/NotoSansCJKsc-Regular.otf'
 ];
 
-async function loadCustomFont() {
-    if (fs.existsSync(FONT_PATH)) {
-        console.log('✅ 字体文件已存在，跳过下载。');
-        registerFont(FONT_PATH, { family: 'CustomFont' });
-        return;
+// 初始化字体函数
+async function initGlobalFont() {
+    // 1. 检查文件是否存在
+    if (!fs.existsSync(FONT_PATH)) {
+        console.log('⏳ [System] 正在下载中文字体...');
+        for (const url of FONT_URLS) {
+            try {
+                console.log(`   尝试下载: ${url}`);
+                const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
+                if (response.data.length < 1000) throw new Error("文件过小");
+                
+                fs.writeFileSync(FONT_PATH, response.data);
+                console.log('✅ [System] 字体下载成功！');
+                break; // 下载成功即跳出循环
+            } catch (e) {
+                console.error(`❌ [System] 下载失败: ${e.message}`);
+            }
+        }
+    } else {
+        console.log('✅ [System] 字体文件已存在。');
     }
 
-    console.log('⏳ 正在下载中文字体 (解决乱码/黑屏)...');
-    for (const url of FONT_URLS) {
+    // 2. 注册字体 (在所有 createCanvas 之前执行)
+    if (fs.existsSync(FONT_PATH)) {
         try {
-            console.log(`尝试下载: ${url}`);
-            const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
-            fs.writeFileSync(FONT_PATH, response.data);
-            console.log('✅ 字体下载成功！');
             registerFont(FONT_PATH, { family: 'CustomFont' });
-            return;
+            console.log('✅ [System] registerFont 注册成功 (CustomFont)');
         } catch (e) {
-            console.error(`❌ 下载失败 (${url}): ${e.message}`);
+            console.error('❌ [System] registerFont 失败:', e);
         }
+    } else {
+        console.error('⚠️ [System] 警告：没有可用的字体文件，中文可能会乱码。');
     }
-    console.error('⚠️ 所有字体下载失败，中文可能会显示为方框。');
 }
 
 const TEXTS = {
@@ -331,21 +347,21 @@ bot.action(['set_lang_cn', 'set_lang_tw'], async (ctx) => {
 });
 
 // ==========================================================
-// ✅ 功能 1 修复：自动下载字体 + 强制白底 + 纯内存绘图
+// ✅ 功能 1 修复：/tp 使用 CustomFont (严格格式)
 // ==========================================================
 bot.command('tp', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply("❌ 无权限使用此指令。");
     if (!ctx.message.reply_to_message) return ctx.reply("⚠️ 请回复一条 .xlsx 文件消息来执行转换。");
     
-    await loadCustomFont();
+    // 注意：这里不再调用 loadFont，因为已经在启动时完成了
 
     const doc = ctx.message.reply_to_message.document;
     if (!doc || (!doc.file_name.endsWith('.xlsx') && doc.mime_type !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
         return ctx.reply("❌ 请回复有效的 .xlsx Excel 文件。");
     }
 
-    const processingMsg = await ctx.reply("⏳ 正在处理 Excel (加载中文字体)...");
+    const processingMsg = await ctx.reply("⏳ 正在处理 (v3.1 Final Fix)...");
 
     try {
         const fileLink = await ctx.telegram.getFileLink(doc.file_id);
@@ -367,7 +383,7 @@ bot.command('tp', async (ctx) => {
                 const text = String(cell || '');
                 let len = 0;
                 for(let c of text) len += (c.charCodeAt(0) > 255 ? 2 : 1);
-                const width = (len * fontSize * 0.6) + (padding * 2); 
+                const width = (len * fontSize * 0.7) + (padding * 2); 
                 if (!colWidths[i] || width > colWidths[i]) colWidths[i] = width;
             });
         });
@@ -375,17 +391,18 @@ bot.command('tp', async (ctx) => {
         for(let k=0; k<colWidths.length; k++) { if(!colWidths[k]) colWidths[k] = 100; }
 
         const totalWidth = colWidths.reduce((a, b) => a + b, 0) + padding * 2;
-        const totalHeight = (json.length * rowHeight) + padding * 2;
+        const totalHeight = (json.length * rowHeight) + padding * 2 + 30;
 
         const canvas = createCanvas(totalWidth, totalHeight);
         const ctx2d = canvas.getContext('2d');
 
-        // 🔥 1. 填充白底 (修复 Telegram 深色模式黑屏)
+        // 🔥 1. 强制白底
         ctx2d.fillStyle = '#ffffff'; 
         ctx2d.fillRect(0, 0, totalWidth, totalHeight);
 
-        // 🔥 2. 使用下载的自定义中文字体 (修复乱码)
-        ctx2d.font = `${fontSize}px "CustomFont", sans-serif`; 
+        // 🔥 2. 严格的 Font 语法 (只用 CustomFont，不加 fallback)
+        // 这样可以确保如果 CustomFont 加载成功就用它，防止 fallback 导致的黑屏/异常
+        ctx2d.font = `${fontSize}px CustomFont`; 
         ctx2d.textBaseline = 'middle';
         ctx2d.lineWidth = 1;
         ctx2d.strokeStyle = '#cccccc';
@@ -393,7 +410,7 @@ bot.command('tp', async (ctx) => {
         let y = padding + rowHeight / 2;
         let lineY = padding;
 
-        // 顶边框
+        // 顶线
         ctx2d.beginPath();
         ctx2d.moveTo(padding, lineY);
         ctx2d.lineTo(totalWidth - padding, lineY);
@@ -404,11 +421,11 @@ bot.command('tp', async (ctx) => {
             
             // 斑马纹
             if (rowIndex % 2 === 0) {
-                ctx2d.fillStyle = '#f9f9f9'; 
+                ctx2d.fillStyle = '#f2f2f2'; 
                 ctx2d.fillRect(padding, lineY, totalWidth - padding * 2, rowHeight);
             }
 
-            // 绘制文字 (强制黑色)
+            // 文字
             ctx2d.fillStyle = '#000000';
             row.forEach((cell, colIndex) => {
                 const text = String(cell || '');
@@ -419,15 +436,19 @@ bot.command('tp', async (ctx) => {
             y += rowHeight;
             lineY += rowHeight;
 
-            // 底边框
+            // 底线
             ctx2d.beginPath();
-            ctx2d.strokeStyle = '#cccccc';
             ctx2d.moveTo(padding, lineY);
             ctx2d.lineTo(totalWidth - padding, lineY);
             ctx2d.stroke();
         });
 
-        const imgBuffer = canvas.toBuffer('image/jpeg', { quality: 0.9 });
+        // 底部版本号
+        ctx2d.font = '12px CustomFont'; // 也用 CustomFont
+        ctx2d.fillStyle = '#888888';
+        ctx2d.fillText("Generated by Huiying Bot (v3.1 Final Fix)", padding, totalHeight - 10);
+
+        const imgBuffer = canvas.toBuffer('image/jpeg', { quality: 0.95 });
         
         await ctx.replyWithPhoto({ source: imgBuffer }, { caption: `✅ 转换成功：${doc.file_name}` });
         try { await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id); } catch {}
@@ -439,7 +460,7 @@ bot.command('tp', async (ctx) => {
 });
 
 // ==========================================================
-// ✅ 修改点：/bz 指令添加“指令快捷键键盘”
+// ✅ 功能：指令快捷键键盘
 // ==========================================================
 bot.command('bz', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
@@ -458,17 +479,15 @@ bot.command('bz', async (ctx) => {
         `/lh - ${t(chatId, 'lh_desc')}\n` +
         `/lj - ${t(chatId, 'lj_desc')}\n`;
 
-    // 使用 reply_markup 弹出 Reply Keyboard
-    // selective: true 确保只有触发该命令的管理员能看到键盘（在群组中需配合 reply 使用）
     ctx.reply(helpText, {
         reply_markup: {
             keyboard: [
                 [{ text: '/qc' }, { text: '/lj' }, { text: '/sx' }]
             ],
-            resize_keyboard: true, // 键盘自适应高度
-            selective: true // 仅针对该用户显示（配合 reply_to_message_id）
+            resize_keyboard: true,
+            selective: true
         },
-        reply_to_message_id: ctx.message.message_id // 强制回复触发者，实现“仅管理员可见”
+        reply_to_message_id: ctx.message.message_id
     });
 });
 
@@ -791,10 +810,15 @@ expressApp.post('/upload', async (req, res) => {
 expressApp.get('/', (req, res) => res.send('Bot OK'));
 const PORT = process.env.PORT || 10000;
 
-expressApp.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+// ==========================================================
+// ✅ 程序启动入口：确保字体初始化完成后再启动服务
+// ==========================================================
+async function startApp() {
+    await initGlobalFont();
 
-    loadCustomFont().then(() => {
+    expressApp.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+
         const startBot = async () => {
             try {
                 await bot.launch({ dropPendingUpdates: true });
@@ -810,7 +834,9 @@ expressApp.listen(PORT, () => {
         };
         startBot();
     });
-});
+}
+
+startApp();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
