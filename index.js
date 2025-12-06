@@ -300,18 +300,18 @@ function generateMedicalSummary(jsonData) {
     let summaryText = `🧾 重点疾病筛查（忽略普通症状）\n\n`;
 
     if (detectedIssues.length > 0) {
-        summaryText += `🚨 **检测到关键疾病记录**：\n${detectedIssues.join('、')}\n`;
+        summaryText += `🚨 检测到关键疾病记录：\n${detectedIssues.join('、')}\n`;
     } else {
-        summaryText += `✅ **未检测到重大疾病关键词**\n（已自动过滤感冒/发热/咳嗽等普通症状）\n`;
+        summaryText += `✅ 未检测到重大疾病关键词\n（已自动过滤感冒/发热/咳嗽等普通症状）\n`;
     }
 
     if(lastVisitDate) {
-        summaryText += `\n📅 **最后一次看病时间**：${lastVisitDate}\n`;
+        summaryText += `\n📅 最后一次看病时间：${lastVisitDate}\n`;
     } else {
-        summaryText += `\n📅 **最后一次看病时间**：未检测到有效日期\n`;
+        summaryText += `\n📅 最后一次看病时间：未检测到有效日期\n`;
     }
 
-    summaryText += `\n⚠️ 注意：此分析仅基于文本，不构成医疗建议。`;
+    summaryText += `\n⚠️ 注意：此分析仅基于文本`;
     return summaryText;
 }
 
@@ -512,7 +512,7 @@ bot.action('zf_confirm_pay', async (ctx) => {
     try {
         // 1. 修改通知群的消息状态
         await ctx.editMessageCaption(
-            ctx.callbackQuery.message.caption + "\n\n✅ 已由管理员确认支付", 
+            ctx.callbackQuery.message.caption + "\n\n✅ 财务已支付", 
             { parse_mode: 'HTML' }
         );
     } catch(e) {}
@@ -546,7 +546,7 @@ bot.on('photo', async (ctx, next) => {
         const payoutInfo = pendingPayouts.get(userId);
         
         // 1. 回复用户
-        await ctx.reply(`✅ 检测到收款码，正在通知财务转账请稍等...`);
+        await ctx.reply(`✅ 检测到收款码，正在通知财务转账请稍等...支付成功会有通知！`);
 
         // 2. 发送到通知群 (使用 sendPhoto 而不是 forward，以便添加按钮)
         const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
@@ -628,7 +628,7 @@ bot.command('tp', async (ctx) => {
         try { await bot.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch(e){}
 
         const previewMsg = await ctx.reply(
-            `📄 ${fileName}的医疗文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>\n\n⚠️ `, 
+            `📄 ${fileName}的医疗文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>\n\n `, 
             {
                 parse_mode: 'HTML',
                 reply_markup: {
@@ -684,7 +684,7 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
         if (newPage < 1) newPage = 1;
         if (newPage > totalPages) newPage = totalPages;
         if (newPage === currentPage && action !== 'toggle_mode') {
-            return ctx.answerCbQuery("已经是尽头了");
+            return ctx.answerCbQuery("没了");
         }
     }
 
@@ -1079,3 +1079,4 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
