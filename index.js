@@ -461,16 +461,6 @@ bot.on('photo', async (ctx, next) => {
         const { targetChatId, targetUserId, amount, operatorId, operatorName, targetUser } = payoutData;
 
         try {
-            // A. 修改通知群的消息状态 (标记为已由管理员截图确认)
-            await ctx.telegram.editMessageCaption(
-                ctx.chat.id,
-                msg.reply_to_message.message_id,
-                msg.reply_to_message.caption + "\n\n✅ 管理员已回复截图确认支付",
-                { parse_mode: 'HTML' }
-            );
-        } catch (e) {}
-
-        try {
             // B. 构建成功通知文本 (保持原有格式，追加指定警告)
             const successMsg = `✅ <b>财务已打款</b>\n\n` +
                                `💰金额：<b>${amount}</b>\n` +
@@ -481,12 +471,12 @@ bot.on('photo', async (ctx, next) => {
                                `TG ID：<code>${targetUser.id}</code>` +
                                `\n\n⚠️财务可能会有时搞错金额，如金额有误请联系负责人处理。`; // ⚠️ 按要求追加的内容
 
-            // C. 发送文本给原群用户
-            await bot.telegram.sendMessage(targetChatId, successMsg, { parse_mode: 'HTML' });
-
-            // D. 将管理员发送的截图转发给原群用户
+            // C. & D. 合并：将管理员发送的截图转发给原群用户，并将 successMsg 作为 caption 发送
             const photoId = msg.photo[msg.photo.length - 1].file_id;
-            await bot.telegram.sendPhoto(targetChatId, photoId);
+            await bot.telegram.sendPhoto(targetChatId, photoId, {
+                caption: successMsg,
+                parse_mode: 'HTML'
+            });
 
         } catch (e) {
             console.error("发送支付通知失败:", e);
