@@ -447,48 +447,44 @@ bot.command('bz', async (ctx) => {
     ctx.reply(helpText);
 });
 
-// === 支付功能：/zf 指令 (已修改：操作人改蓝色链接，增加目标用户完整信息存储) ===
-bot.command('zf', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
+// === 新增：监听管理员回复“打款 100”触发原本 /zf 功能 ===
+bot.on('text', async (ctx, next) => {
+    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return next();
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return next();
 
-    const replyMsg = ctx.message.reply_to_message;
-    if (!replyMsg) {
-        return ctx.reply("❌ 请回复用户的消息来使用此指令。");
-    }
+    const reply = ctx.message.reply_to_message;
+    if (!reply) return next(); // 必须回复某个用户才触发
 
-    const args = ctx.message.text.split(' ');
-    const amount = args[1];
-    if (!amount) {
-        return ctx.reply("❌ 请输入转账金额，例如：/zf 100");
-    }
+    const text = ctx.message.text.trim();
+    const match = text.match(/^打款\s+(\d+)$/); // 只能匹配“打款 100”
 
-    const targetUserId = replyMsg.from.id;
-    const targetUser = replyMsg.from; // 获取完整用户信息对象
-    const targetUserName = replyMsg.from.first_name;
-    const adminName = ctx.from.first_name;
+    if (!match) return next();
 
-    // 记录状态，等待用户发图
-    // 修改：增加了 adminId 和 targetUser 的存储，用于后续显示
-    pendingPayouts.set(targetUserId, { 
+    const amount = match[1];
+    const targetUser = reply.from;
+
+    // 完全复用你原本的 pendingPayouts 数据结构
+    pendingPayouts.set(targetUser.id, { 
         amount: amount, 
-        adminName: adminName,
-        adminId: ctx.from.id, // 新增：保存管理员ID用于生成链接
-        targetUser: targetUser, // 新增：保存目标用户完整信息
-        chatId: ctx.chat.id 
+        adminName: ctx.from.first_name,
+        adminId: ctx.from.id,
+        targetUser: targetUser,
+        chatId: ctx.chat.id
     });
 
-    // 修改：使用 HTML 格式，将操作人改为链接，增加目标用户信息显示
-    const replyText = `💸 <b>财务转账通知</b>\n\n` +
-                      `金额：<b>${amount}</b>\n` +
-                      `操作人：<a href="tg://user?id=${ctx.from.id}">${adminName}</a>\n\n` +
-                      `<b>👤 目标用户信息：</b>\n` +
-                      `TG 名字：${targetUser.first_name}${targetUser.last_name ? ' ' + targetUser.last_name : ''}\n` +
-                      `TG 用户名：${targetUser.username ? '@' + targetUser.username : '无'}\n` +
-                      `TG ID：<code>${targetUser.id}</code>\n\n` +
-                      `@${targetUserName} 请回复此消息并发送你的 <b>微信</b> 或 <b>支付宝</b> 收款码图片！`;
-    
-    await ctx.reply(replyText, { parse_mode: 'HTML' });
+    await ctx.reply(
+        `💸 <b>已收到打款指令</b>\n\n` +
+        `金额：<b>${amount}</b>\n` +
+        `操作人：<a href="tg://user?id=${ctx.from.id}">${ctx.from.first_name}</a>\n\n` +
+        `<b>👤 目标用户信息：</b>\n` +
+        `TG 名字：${targetUser.first_name}${targetUser.last_name ? ' ' + targetUser.last_name : ''}\n` +
+        `TG 用户名：${targetUser.username ? '@' + targetUser.username : '无'}\n` +
+        `TG ID：<code>${targetUser.id}</code>\n\n` +
+        `@${targetUser.first_name} 回复此消息 带着你的 <b>微信</b> 或 <b>支付宝</b> 的收款码回复！`,
+        { parse_mode: 'HTML' }
+    );
+
+    return; // 不干扰其他监听器
 });
 
 // === 支付功能：处理管理员点击“已支付” (已修改：操作人改蓝色链接，增加目标用户信息) ===
@@ -546,7 +542,7 @@ bot.on('photo', async (ctx, next) => {
         const payoutInfo = pendingPayouts.get(userId);
         
         // 1. 回复用户
-        await ctx.reply(`✅ 检测到收款码，正在通知财务转账请稍等...支付成功会有通知！`);
+        await ctx.reply(`✅ 检测到收款码，正在通知财务转账请稍等...打款成功会有通知！`);
 
         // 2. 发送到通知群 (使用 sendPhoto 而不是 forward，以便添加按钮)
         const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
@@ -1079,4 +1075,5 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
 
