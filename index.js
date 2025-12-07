@@ -447,6 +447,28 @@ bot.command('bz', async (ctx) => {
     ctx.reply(helpText);
 });
 
+// === 修改：取消打款功能 (改为通过 callback_data 获取 ID) ===
+bot.action(/^cancel_pay_(\d+)$/, async (ctx) => {
+    // 1. 权限验证：只有管理员能用
+    if (!await isAdmin(ctx.chat.id, ctx.from.id)) {
+        return ctx.answerCbQuery("❌ 无权限", { show_alert: true });
+    }
+
+    // 2. 从 callback_data 提取目标用户 ID
+    const targetUserId = parseInt(ctx.match[1]);
+
+    // 3. 执行取消：删除 pendingPayouts 记录
+    // 即使 Map 中不存在该 ID (比如已经支付了或已取消)，执行 delete 也不会报错，符合只做清理的要求
+    if (pendingPayouts.has(targetUserId)) {
+        pendingPayouts.delete(targetUserId);
+        await ctx.reply("✅ 本次打款流程已取消。");
+    } else {
+        await ctx.reply("⚠️ 该打款流程不存在或已结束。");
+    }
+    
+    await ctx.answerCbQuery();
+});
+
 // === 处理图片消息 (同时处理 /upload 和 支付确认) ===
 bot.on('photo', async (ctx, next) => {
     const userId = ctx.from.id;
@@ -491,8 +513,14 @@ bot.on('photo', async (ctx, next) => {
     if (pendingPayouts.has(userId)) {
         const payoutInfo = pendingPayouts.get(userId);
 
-        // 回复用户
-        await ctx.reply(`✅ 检测到收款码，正在通知财务转账请稍等...`);
+        // 回复用户 (新增取消按钮，携带 ID)
+        await ctx.reply(`✅ 检测到收款码，正在通知财务转账请稍等...`, {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "❌ 取消打款", callback_data: `cancel_pay_${userId}` }] 
+                ]
+            }
+        });
 
         // 发送到通知群 (⚠️注意：这里删除了 reply_markup 按钮)
         const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
