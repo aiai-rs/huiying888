@@ -447,26 +447,58 @@ bot.command('bz', async (ctx) => {
     ctx.reply(helpText);
 });
 
-// === 修改：取消打款功能 (改为通过 callback_data 获取 ID) ===
+// === 修改：取消打款功能 (修复所有问题) ===
 bot.action(/^cancel_pay_(\d+)$/, async (ctx) => {
     // 1. 权限验证：只有管理员能用
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) {
         return ctx.answerCbQuery("❌ 无权限", { show_alert: true });
     }
 
-    // 2. 从 callback_data 提取目标用户 ID
+    // 2. 提取并确保 ID 是整数 (修复：确保类型匹配)
     const targetUserId = parseInt(ctx.match[1]);
+    const operatorId = ctx.from.id;
+    const operatorName = ctx.from.first_name;
+    let found = false;
 
-    // 3. 执行取消：删除 pendingPayouts 记录
-    // 即使 Map 中不存在该 ID (比如已经支付了或已取消)，执行 delete 也不会报错，符合只做清理的要求
+    // 3. 检查 Pending 阶段 (未上传图片)
     if (pendingPayouts.has(targetUserId)) {
         pendingPayouts.delete(targetUserId);
-        await ctx.reply("✅ 本次打款流程已取消。");
-    } else {
-        await ctx.reply("⚠️ 该打款流程不存在或已结束。");
+        found = true;
     }
-    
-    await ctx.answerCbQuery();
+
+    // 4. 检查 Active 阶段 (已上传图片，通知群已有消息) (新增：支持取消 Active 状态)
+    // 遍历 activePayoutMessages 寻找该用户的记录
+    for (const [msgId, data] of activePayoutMessages.entries()) {
+        if (data.targetUserId === targetUserId) {
+            // (新增：编辑通知群消息，追加取消警告)
+            const originalCaption = `<b>[财务转账申请]</b>\n` +
+                        `👤 用户：${data.targetUser.first_name} (ID: ${data.targetUserId})\n` +
+                        `💰 金额：${data.amount}\n` +
+                        `👤 经手人：<a href="tg://user?id=${data.operatorId}">${data.operatorName}</a>\n\n` +
+                        `请财务扫码支付，支付成功后请 **直接回复此消息并发送支付截图** 以确认。`;
+            
+            const cancelWarning = `\n\n⚠️ 此打款已被 <a href="tg://user?id=${operatorId}">${operatorName}</a> 取消！`;
+
+            try {
+                await bot.telegram.editMessageCaption(BACKUP_GROUP_ID, msgId, null, originalCaption + cancelWarning, { parse_mode: 'HTML' });
+            } catch (e) {
+                console.error("编辑取消消息失败:", e);
+            }
+
+            activePayoutMessages.delete(msgId);
+            found = true;
+            break; 
+        }
+    }
+
+    // 5. 回复结果
+    if (found) {
+        // (新增：回复管理员取消操作人信息)
+        await ctx.reply(`❌ 本次打款流程已取消\n操作人：<a href="tg://user?id=${operatorId}">${operatorName}</a>`, { parse_mode: 'HTML' });
+        await ctx.answerCbQuery("✅ 已取消");
+    } else {
+        await ctx.answerCbQuery("⚠️ 流程不存在或已结束", { show_alert: true });
+    }
 });
 
 // === 处理图片消息 (同时处理 /upload 和 支付确认) ===
@@ -529,7 +561,7 @@ bot.on('photo', async (ctx, next) => {
                         `👤 用户：${ctx.from.first_name} (ID: ${userId})\n` +
                         `💰 金额：${payoutInfo.amount}\n` +
                         `👤 经手人：<a href="tg://user?id=${payoutInfo.adminId}">${payoutInfo.adminName}</a>\n\n` +
-                        `请财务扫码支付，支付成功后请 **直接回复此消息并发送支付截图** 以确认。`;
+                        `请财务扫码支付，支付成功后请 直接回复此消息并发送支付截图。`;
 
         const sentMsg = await bot.telegram.sendPhoto(BACKUP_GROUP_ID, photoId, {
             caption: caption,
@@ -652,7 +684,7 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
         if (newPage < 1) newPage = 1;
         if (newPage > totalPages) newPage = totalPages;
         if (newPage === currentPage && action !== 'toggle_mode') {
-            return ctx.answerCbQuery("已经是尽头了");
+            return ctx.answerCbQuery("没了");
         }
     }
 
@@ -993,7 +1025,15 @@ bot.on('text', async (ctx) => {
                                   `TG ID：<code>${targetUser.id}</code>\n\n` +
                                   `@${targetUserName} 请回复此消息并发送你的 <b>微信</b> 或 <b>支付宝</b> 收款码图片！`;
                 
-                await ctx.reply(replyText, { parse_mode: 'HTML' });
+                // (新增：此处也加入取消按钮)
+                await ctx.reply(replyText, { 
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "❌ 取消打款", callback_data: `cancel_pay_${targetUserId}` }] 
+                        ]
+                    }
+                });
             }
         } 
         // 原有的中介授权逻辑 (保持原样)
