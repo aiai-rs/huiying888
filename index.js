@@ -147,14 +147,17 @@ const unauthorizedMessages = new Map();
 const zlMessages = new Map();
 
 // === 全局变量 ===
-const tpSessions = {}; 
+const tpSessions = {};
+
 const pendingAgentAuth = new Map();
 
 // === 新增：支付功能相关变量 ===
 // 存储正在等待上传收款码的用户: { userId: { amount, adminName, adminId, chatId, targetUser } }
-const pendingPayouts = new Map(); 
+const pendingPayouts = new Map();
+
 // 存储待确认的支付消息: { adminMsgId: { targetChatId, targetUserId, amount, operatorId, operatorName, targetUser } }
-const activePayoutMessages = new Map(); 
+const activePayoutMessages = new Map();
+
 
 // === 自动清理过期 session (24小时) ===
 setInterval(() => {
@@ -164,7 +167,8 @@ setInterval(() => {
             delete tpSessions[userId];
         }
     }
-}, 60 * 60 * 1000); 
+}, 60 * 60 * 1000);
+
 
 const ZL_LINKS = { '租车': 'https://che88.netlify.app', '大飞': 'https://fei88.netlify.app', '走药': 'https://yao88.netlify.app', '背债': 'https://bei88.netlify.app' };
 const ZJ_LINKS = { '租车': 'https://zjc88.netlify.app', '大飞': 'https://zjf88.netlify.app', '走药': 'https://zjy88.netlify.app', '背债': 'https://zjb88.netlify.app' };
@@ -300,23 +304,24 @@ function generateMedicalSummary(jsonData) {
     let summaryText = `🧾 重点疾病筛查（忽略普通症状）\n\n`;
 
     if (detectedIssues.length > 0) {
-        summaryText += `🚨 检测到关键疾病记录：\n${detectedIssues.join('、')}\n`;
+        summaryText += `🚨 **检测到关键疾病记录**：\n${detectedIssues.join('、')}\n`;
     } else {
-        summaryText += `✅ 未检测到重大疾病关键词\n（已自动过滤感冒/发热/咳嗽等普通症状）\n`;
+        summaryText += `✅ **未检测到重大疾病关键词**\n（已自动过滤感冒/发热/咳嗽等普通症状）\n`;
     }
 
     if(lastVisitDate) {
-        summaryText += `\n📅 最后一次看病时间：${lastVisitDate}\n`;
+        summaryText += `\n📅 **最后一次看病时间**：${lastVisitDate}\n`;
     } else {
-        summaryText += `\n📅 最后一次看病时间：未检测到有效日期\n`;
+        summaryText += `\n📅 **最后一次看病时间**：未检测到有效日期\n`;
     }
 
-    summaryText += `\n⚠️ 注意：此分析仅基于文本`;
+    summaryText += `\n⚠️ 注意：此分析仅基于文本，不构成医疗建议。`;
     return summaryText;
 }
 
 function renderCardPage(rawData, pageNum, mode = 'short') {
-    const pageSize = 8; 
+    const pageSize = 8;
+
     const start = (pageNum - 1) * pageSize;
     const end = start + pageSize;
     const pageData = rawData.slice(start, end);
@@ -337,20 +342,15 @@ function renderCardPage(rawData, pageNum, mode = 'short') {
         let diagnosis = getCol(5);
         let time = getCol(6);
 
-        if (name.includes('姓名') || id.includes('身份证')) {
-             return null; 
+        if (name.includes('姓名') || id.includes('身份证')) { 
+            return null; 
         }
 
         if (mode === 'short' && hospital.length > 12) {
             hospital = hospital.substring(0, 10) + '..';
         }
 
-        return `[${rowNum}] ${name} (${type})
-🆔 ${id}
-🏥 ${hospital}
-💡 ${diagnosis}
-⏰ ${time}
-➖➖➖➖➖➖➖➖➖➖`;
+        return `[${rowNum}] ${name} (${type}) 🆔 ${id} 🏥 ${hospital} 💡 ${diagnosis} ⏰ ${time} ➖➖➖➖➖➖➖➖➖➖`;
     }).filter(line => line !== null); 
 
     return {
@@ -370,7 +370,7 @@ bot.use(async (ctx, next) => {
 
         await ctx.reply(t(null, 'pm_reply'));
 
-        const reportText = `🚨**私信访问警报**🚨\n\n` +
+        const reportText = `🚨**私信访问警报**🚨\n` +
                            `👤用户: ${userName} ${userUsername}\n` +
                            `🆔ID: ${userId}\n` +
                            `📝消息内容: ${messageText}\n` +
@@ -441,150 +441,100 @@ bot.command('bz', async (ctx) => {
         `/zj - ${t(chatId, 'zj_desc')}\n` +
         `/qc - ${t(chatId, 'qc_desc')}\n` +
         `/lh - ${t(chatId, 'lh_desc')}\n` +
-        `/lj - ${t(chatId, 'lj_desc')}\n` + 
-        `/zf - 财务转账\n` +
+        `/lj - ${t(chatId, 'lj_desc')}\n` +
+         `/zf - 财务转账 (已改为回复“打款 金额”)\n` +
         `/tp - Excel预览 (新增)\n`;
     ctx.reply(helpText);
 });
 
-// === 支付功能：/zf 指令 (已修改：操作人改蓝色链接，增加目标用户完整信息存储) ===
-bot.command('zf', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
-
-    const replyMsg = ctx.message.reply_to_message;
-    if (!replyMsg) {
-        return ctx.reply("❌ 请回复用户的消息来使用此指令。");
-    }
-
-    const args = ctx.message.text.split(' ');
-    const amount = args[1];
-    if (!amount) {
-        return ctx.reply("❌ 请输入转账金额，例如：/zf 100");
-    }
-
-    const targetUserId = replyMsg.from.id;
-    const targetUser = replyMsg.from; // 获取完整用户信息对象
-    const targetUserName = replyMsg.from.first_name;
-    const adminName = ctx.from.first_name;
-
-    // 记录状态，等待用户发图
-    // 修改：增加了 adminId 和 targetUser 的存储，用于后续显示
-    pendingPayouts.set(targetUserId, { 
-        amount: amount, 
-        adminName: adminName,
-        adminId: ctx.from.id, // 新增：保存管理员ID用于生成链接
-        targetUser: targetUser, // 新增：保存目标用户完整信息
-        chatId: ctx.chat.id 
-    });
-
-    // 修改：使用 HTML 格式，将操作人改为链接，增加目标用户信息显示
-    const replyText = `💸 <b>财务转账通知</b>\n\n` +
-                      `金额：<b>${amount}</b>\n` +
-                      `操作人：<a href="tg://user?id=${ctx.from.id}">${adminName}</a>\n\n` +
-                      `<b>👤 目标用户信息：</b>\n` +
-                      `TG 名字：${targetUser.first_name}${targetUser.last_name ? ' ' + targetUser.last_name : ''}\n` +
-                      `TG 用户名：${targetUser.username ? '@' + targetUser.username : '无'}\n` +
-                      `TG ID：<code>${targetUser.id}</code>\n\n` +
-                      `@${targetUserName} 请回复此消息并发送你的 <b>微信</b> 或 <b>支付宝</b> 收款码图片！`;
-    
-    await ctx.reply(replyText, { parse_mode: 'HTML' });
-});
-
-// === 支付功能：处理管理员点击“已支付” (已修改：操作人改蓝色链接，增加目标用户信息) ===
-bot.action('zf_confirm_pay', async (ctx) => {
-    const adminId = ctx.from.id;
-    // 只有在通知群的管理员可以点
-    if (!await isAdmin(ctx.chat.id, adminId)) {
-        return ctx.answerCbQuery("❌ 无权限操作");
-    }
-
-    const msgId = ctx.callbackQuery.message.message_id;
-    const payoutData = activePayoutMessages.get(msgId);
-
-    if (!payoutData) {
-        return ctx.answerCbQuery("⚠️ 该订单可能已过期或数据丢失");
-    }
-
-    // 修改：解构出 operatorId, operatorName, targetUser
-    const { targetChatId, targetUserId, amount, operatorId, operatorName, targetUser } = payoutData;
-
-    try {
-        // 1. 修改通知群的消息状态
-        await ctx.editMessageCaption(
-            ctx.callbackQuery.message.caption + "\n\n✅ 财务已支付", 
-            { parse_mode: 'HTML' }
-        );
-    } catch(e) {}
-
-    try {
-        // 2. 回到原群通知用户 (修改：操作人蓝色链接，增加目标用户信息，不修改财务部分)
-        const successMsg = `✅ <b>财务已打款</b>\n\n` +
-                           `💰金额：<b>${amount}</b>\n` +
-                           `👤操作人：<a href="tg://user?id=${operatorId}">${operatorName}</a>\n\n` +
-                           `<b>👤 收款用户信息：</b>\n` +
-                           `TG 名字：${targetUser.first_name}${targetUser.last_name ? ' ' + targetUser.last_name : ''}\n` +
-                           `TG 用户名：${targetUser.username ? '@' + targetUser.username : '无'}\n` +
-                           `TG ID：<code>${targetUser.id}</code>`;
-
-        await bot.telegram.sendMessage(targetChatId, successMsg, { parse_mode: 'HTML' });
-    } catch(e) {
-        console.error("发送支付通知失败:", e);
-    }
-
-    // 清理内存
-    activePayoutMessages.delete(msgId);
-    return ctx.answerCbQuery("✅ 操作成功，已通知用户");
-});
-
-// === 处理图片消息 (同时处理 /upload 和 /zf 支付图片) (已修改：传递数据) ===
+// === 处理图片消息 (同时处理 /upload 和 支付确认) ===
 bot.on('photo', async (ctx, next) => {
     const userId = ctx.from.id;
+    const msg = ctx.message;
 
-    // 检查是否是正在等待支付收款码的用户
+    // 1️⃣ 新增逻辑：检查是否是管理员回复“支付申请消息”并发送了截图（替代原有的按钮确认）
+    if (msg.reply_to_message && activePayoutMessages.has(msg.reply_to_message.message_id)) {
+        // 验证是否是管理员
+        if (!await isAdmin(ctx.chat.id, userId)) return;
+
+        const payoutData = activePayoutMessages.get(msg.reply_to_message.message_id);
+        const { targetChatId, targetUserId, amount, operatorId, operatorName, targetUser } = payoutData;
+
+        try {
+            // A. 修改通知群的消息状态 (标记为已由管理员截图确认)
+            await ctx.telegram.editMessageCaption(
+                ctx.chat.id,
+                msg.reply_to_message.message_id,
+                msg.reply_to_message.caption + "\n\n✅ 管理员已回复截图确认支付",
+                { parse_mode: 'HTML' }
+            );
+        } catch (e) {}
+
+        try {
+            // B. 构建成功通知文本 (保持原有格式，追加指定警告)
+            const successMsg = `✅ <b>财务已打款</b>\n\n` +
+                               `💰金额：<b>${amount}</b>\n` +
+                               `👤操作人：<a href="tg://user?id=${operatorId}">${operatorName}</a>\n\n` +
+                               `<b>👤 收款用户信息：</b>\n` +
+                               `TG 名字：${targetUser.first_name}${targetUser.last_name ? ' ' + targetUser.last_name : ''}\n` +
+                               `TG 用户名：${targetUser.username ? '@' + targetUser.username : '无'}\n` +
+                               `TG ID：<code>${targetUser.id}</code>` +
+                               `\n\n⚠️财务可能会有时搞错金额，如金额有误请联系负责人处理。`; // ⚠️ 按要求追加的内容
+
+            // C. 发送文本给原群用户
+            await bot.telegram.sendMessage(targetChatId, successMsg, { parse_mode: 'HTML' });
+
+            // D. 将管理员发送的截图转发给原群用户
+            const photoId = msg.photo[msg.photo.length - 1].file_id;
+            await bot.telegram.sendPhoto(targetChatId, photoId);
+
+        } catch (e) {
+            console.error("发送支付通知失败:", e);
+        }
+
+        // 清理内存
+        activePayoutMessages.delete(msg.reply_to_message.message_id);
+        return; // 结束处理
+    }
+
+    // 2️⃣ 原有逻辑：检查是否是正在等待支付收款码的用户 (已修改：删除按钮)
     if (pendingPayouts.has(userId)) {
         const payoutInfo = pendingPayouts.get(userId);
-        
-        // 1. 回复用户
-        await ctx.reply(`✅ 检测到收款码，正在通知财务转账请稍等...支付成功会有通知！`);
 
-        // 2. 发送到通知群 (使用 sendPhoto 而不是 forward，以便添加按钮)
+        // 回复用户
+        await ctx.reply(`✅ 检测到收款码，正在通知财务转账请稍等...`);
+
+        // 发送到通知群 (⚠️注意：这里删除了 reply_markup 按钮)
         const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
         
-        // 修改：通知群的 caption 也使用 HTML，并将经手人改为链接（保持一致性）
         const caption = `<b>[财务转账申请]</b>\n` +
                         `👤 用户：${ctx.from.first_name} (ID: ${userId})\n` +
                         `💰 金额：${payoutInfo.amount}\n` +
                         `👤 经手人：<a href="tg://user?id=${payoutInfo.adminId}">${payoutInfo.adminName}</a>\n\n` +
-                        `请财务扫码支付，完成后点击下方按钮：`;
+                        `请财务扫码支付，支付成功后请 **直接回复此消息并发送支付截图** 以确认。`;
 
         const sentMsg = await bot.telegram.sendPhoto(BACKUP_GROUP_ID, photoId, {
             caption: caption,
-            parse_mode: 'HTML',
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: "✅ 财务已支付", callback_data: "zf_confirm_pay" }]
-                ]
-            }
+            parse_mode: 'HTML'
+            // ⚠️ 按钮已删除
         });
 
-        // 3. 记录这条消息对应的支付信息，以便回调时使用
-        // 修改：存入 adminId, adminName 和 targetUser 以便后续使用
+        // 记录这条消息对应的支付信息，等待管理员回复截图
         activePayoutMessages.set(sentMsg.message_id, {
             targetChatId: payoutInfo.chatId,
             targetUserId: userId,
             amount: payoutInfo.amount,
-            operatorId: payoutInfo.adminId, // 新增
-            operatorName: payoutInfo.adminName, // 新增
-            targetUser: payoutInfo.targetUser // 新增
+            operatorId: payoutInfo.adminId,
+            operatorName: payoutInfo.adminName,
+            targetUser: payoutInfo.targetUser
         });
 
-        // 4. 清除用户等待状态
+        // 清除用户等待状态
         pendingPayouts.delete(userId);
-        return; // 结束处理，不进入后续逻辑
+        return; 
     }
 
-    await next(); // 如果不是支付图片，继续后续逻辑 (如果有)
+    await next(); 
 });
 
 bot.command('tp', async (ctx) => {
@@ -592,8 +542,8 @@ bot.command('tp', async (ctx) => {
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
 
     const replyMsg = ctx.message.reply_to_message;
-    if (!replyMsg || !replyMsg.document) {
-         return ctx.reply("❌ 请回复一条包含 .xlsx 文件的消息来使用此功能。");
+    if (!replyMsg || !replyMsg.document) { 
+        return ctx.reply("❌ 请回复一条包含 .xlsx 文件的消息来使用此功能。");
     }
 
     const doc = replyMsg.document;
@@ -602,7 +552,7 @@ bot.command('tp', async (ctx) => {
     }
 
     const adminId = ctx.from.id;
-    const fileName = doc.file_name.replace('.xlsx', ''); 
+    const fileName = doc.file_name.replace('.xlsx', '');
     
     try {
         const statusMsg = await ctx.reply("⏳ 正在内存解析 Excel，请稍候...");
@@ -628,7 +578,7 @@ bot.command('tp', async (ctx) => {
         try { await bot.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch(e){}
 
         const previewMsg = await ctx.reply(
-            `📄 ${fileName}的医疗文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>\n\n `, 
+            `📄 ${fileName}的医疗文件预览（第 1 页 / 共 ${totalPages} 页）\n\n<pre>${page1}</pre>\n\n⚠️ `, 
             {
                 parse_mode: 'HTML',
                 reply_markup: {
@@ -684,7 +634,7 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
         if (newPage < 1) newPage = 1;
         if (newPage > totalPages) newPage = totalPages;
         if (newPage === currentPage && action !== 'toggle_mode') {
-            return ctx.answerCbQuery("没了");
+            return ctx.answerCbQuery("已经是尽头了");
         }
     }
 
@@ -707,7 +657,7 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
                 }
             }
         );
-    } catch(e) {} 
+    } catch(e) {}
     
     return ctx.answerCbQuery();
 });
@@ -974,32 +924,63 @@ bot.on('text', async (ctx) => {
     const userId = ctx.from.id;
     const role = authorizedUsers.get(userId);
     const isAdminUser = await isAdmin(ctx.chat.id, userId);
+    const text = ctx.message.text.trim(); // 获取文本并去空格
 
+    // 非管理员且无权限的处理 (保持原样)
     if (!isAdminUser && role !== 'user' && role !== 'agent') {
         try { await ctx.deleteMessage(); } catch(e){}
         const chatId = ctx.chat.id;
-
         const name = ctx.from.first_name;
         const username = ctx.from.username ? `@${ctx.from.username}` : '';
         const msg = t(chatId, 'unauth_msg', { name, username });
         const warning = await ctx.reply(msg);
-
         warningMessages.set(warning.message_id, { userId: ctx.from.id, userName: ctx.from.first_name });
         return;
     }
 
+    // 管理员回复消息触发的指令 (包含原来的授权逻辑和新的打款逻辑)
     if (isAdminUser && ctx.message.reply_to_message) {
-        const text = ctx.message.text.trim();
         const replyId = ctx.message.reply_to_message.message_id;
         const chatId = ctx.chat.id;
 
-        let target = warningMessages.get(replyId) ||
-                      unauthorizedMessages.get(replyId) ||
-                      { userId: ctx.message.reply_to_message.from.id, userName: ctx.message.reply_to_message.from.first_name };
+        // 获取目标用户信息
+        let target = warningMessages.get(replyId) || 
+                     unauthorizedMessages.get(replyId) || 
+                     { userId: ctx.message.reply_to_message.from.id, userName: ctx.message.reply_to_message.from.first_name };
+        
+        // ⚠️⚠️ 新增：打款指令触发 (格式：打款 100) ⚠️⚠️
+        if (text.startsWith('打款 ')) {
+            const amount = text.split(' ')[1]; // 获取金额
+            if (amount) {
+                const targetUserId = ctx.message.reply_to_message.from.id;
+                const targetUser = ctx.message.reply_to_message.from;
+                const targetUserName = ctx.message.reply_to_message.from.first_name;
+                const adminName = ctx.from.first_name;
 
-        if (!target) return;
+                // 记录状态，等待用户发图
+                pendingPayouts.set(targetUserId, { 
+                    amount: amount, 
+                    adminName: adminName,
+                    adminId: ctx.from.id,
+                    targetUser: targetUser,
+                    chatId: ctx.chat.id 
+                });
 
-        if (text === '中介授权') {
+                const replyText = `💸 <b>财务转账通知</b>\n\n` +
+                                  `金额：<b>${amount}</b>\n` +
+                                  `操作人：<a href="tg://user?id=${ctx.from.id}">${adminName}</a>\n\n` +
+                                  `<b>👤 目标用户信息：</b>\n` +
+                                  `TG 名字：${targetUser.first_name}${targetUser.last_name ? ' ' + targetUser.last_name : ''}\n` +
+                                  `TG 用户名：${targetUser.username ? '@' + targetUser.username : '无'}\n` +
+                                  `TG ID：<code>${targetUser.id}</code>\n\n` +
+                                  `@${targetUserName} 请回复此消息并发送你的 <b>微信</b> 或 <b>支付宝</b> 收款码图片！`;
+                
+                await ctx.reply(replyText, { parse_mode: 'HTML' });
+            }
+        } 
+        // 原有的中介授权逻辑 (保持原样)
+        else if (text === '中介授权') {
+            if (!target) return; // 只有授权逻辑需要 target 检查，打款不需要依赖 warningMessages
             const promptMsg = await ctx.reply("请选择你兄弟的出行方式：", {
                 reply_markup: {
                     inline_keyboard: [
@@ -1010,8 +991,10 @@ bot.on('text', async (ctx) => {
             });
             pendingAgentAuth.set(promptMsg.message_id, target);
             warningMessages.delete(replyId);
-            
-        } else if (text === '授权') {
+        } 
+        // 原有的普通授权逻辑 (保持原样)
+        else if (text === '授权') {
+            if (!target) return;
             authorizedUsers.set(target.userId, 'user');
             saveAuth();
             try { await bot.telegram.restrictChatMember(chatId, target.userId, { permissions: { can_send_messages: true, can_send_photos: true, can_send_videos: true, can_send_other_messages: true, can_add_web_page_previews: true, can_invite_users: true } }); } catch (e) {}
@@ -1079,4 +1062,3 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
