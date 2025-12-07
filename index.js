@@ -350,7 +350,17 @@ function renderCardPage(rawData, pageNum, mode = 'short') {
             hospital = hospital.substring(0, 10) + '..';
         }
 
-        return `[${rowNum}] ${name} (${type}) 🆔 ${id} 🏥 ${hospital} 💡 ${diagnosis} ⏰ ${time} ➖➖➖➖➖➖➖➖➖➖`;
+  return (
+    `[${rowNum}]\n` +
+    `姓名：${name || '无'}\n` +
+    `身份证：${id || '无'}\n` +
+    `医院：${hospital || '无'}\n` +
+    `病症：${diagnosis || '无'}\n` +
+    `时间：${time || '无'}\n` +
+    `—————————————`
+);
+
+
     }).filter(line => line !== null); 
 
     return {
@@ -1120,3 +1130,4 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
