@@ -752,39 +752,6 @@ bot.action('tp_delete_session', async (ctx) => {
 // ======================
 // 终极恢复出厂设置 /qc
 // ======================
-bot.command('qc', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id))
-        return ctx.reply(t(ctx.chat.id, 'perm_deny'));
-
-    await ctx.reply(
-        "⚠️ <b>恢复出厂设置（完全清空模式）</b>\n\n" +
-        "此操作将：\n" +
-        "• 清除所有授权（全局）\n" +
-        "• 清除 tokens（全局）\n" +
-        "• 清除 pending 打款流程（全局）\n" +
-        "• 清除 active 打款流程（全局）\n" +
-        "• 清除 Excel 预览 tpSessions（全局）\n" +
-        "• 清除中介授权 pending（全局）\n" +
-        "• 清除未授权/警告/zl 按钮缓存（全局）\n" +
-        "• 删除 authorized.json（全局）\n" +
-        "• 删除当前群最近 1000 条消息（仅本群）\n\n" +
-        "<b>不可恢复！是否继续？</b>",
-        {
-            parse_mode: "HTML",
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: "🔥 确认完全重置", callback_data: "qc_full_yes" }],
-                    [{ text: "❌ 取消", callback_data: "qc_full_no" }]
-                ]
-            }
-        }
-    );
-});
-
-// ======================
-// ⭕ 最终重置执行区
-// ======================
 bot.action('qc_full_yes', async (ctx) => {
     if (!await isAdmin(ctx.chat.id, ctx.from.id))
         return ctx.answerCbQuery("❌ 无权限");
@@ -792,50 +759,40 @@ bot.action('qc_full_yes', async (ctx) => {
     const chatId = ctx.chat.id;
 
     try {
-        // ======== 全局内存清空 ========
+        // ① 先编辑成提示中状态（此时消息还存在）
+        await ctx.editMessageText("⏳ 正在恢复出厂设置，请稍候…", {
+            parse_mode: "HTML"
+        });
+
+        // ② 全局数据清空
         authorizedUsers.clear();
         groupTokens.clear();
         groupConfigs.clear();
-
         warningMessages.clear();
         unauthorizedMessages.clear();
         zlMessages.clear();
-
         pendingAgentAuth.clear();
         pendingPayouts.clear();
         activePayoutMessages.clear();
-
         for (const k in tpSessions) delete tpSessions[k];
-
-        // ======== 删除授权文件 ========
         if (fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE);
 
-        // ======== 删除当前群 1000 条消息 ========
+        // ③ 删除当前群 1000 条消息（包括刚才那条提示）
         for (let i = 0; i < 1000; i++) {
             try {
                 await bot.telegram.deleteMessage(chatId, ctx.callbackQuery.message.message_id - i);
             } catch (e) {}
         }
 
-        // ======== 完成提示 ========
-        await ctx.editMessageText(
-            "✅ <b>恢复出厂设置已完成！</b>\n\n" +
-            "所有数据已彻底清空，当前群消息已删除。",
+        // ④ 发全新的消息（不会报错）
+        await ctx.reply(
+            "✅ <b>恢复出厂设置已完成！</b>\n\n所有数据已彻底清空，当前群消息已删除。",
             { parse_mode: "HTML" }
         );
 
     } catch (err) {
         await ctx.reply(`❌ 执行失败：${err.message}`);
     }
-});
-
-// ======================
-// ❌ 取消操作
-// ======================
-bot.action('qc_full_no', async (ctx) => {
-    try {
-        await ctx.editMessageText("已取消操作。");
-    } catch {}
 });
 
 
@@ -1169,6 +1126,7 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
 
 
 
