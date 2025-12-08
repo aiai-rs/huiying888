@@ -6,12 +6,20 @@ const crypto = require('crypto');
 const xlsx = require('xlsx');
 const https = require('https');
 
-// ========================
-// 1. 初始化变量 (放在最前面)
-// ========================
+// ==========================================
+// 1. 初始化核心模块
+// ==========================================
 let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
+// 初始化 Express (放在最前面，防止报错)
+const expressApp = express();
+expressApp.use(cors());
+expressApp.use(express.raw({ type: '*/*', limit: '10mb' }));
+
+// ==========================================
+// 2. 配置常量
+// ==========================================
 const GROUP_CHAT_IDS = [
   -1003354803364,
   -1003381368112,
@@ -28,14 +36,6 @@ const BACKUP_GROUP_ID = -1003293673373;
 const WEB_APP_URL = 'https://huiying8.netlify.app';
 const AUTH_FILE = './authorized.json';
 
-// 初始化 Express (关键！必须在这里定义，后面才能用)
-const expressApp = express();
-expressApp.use(cors());
-expressApp.use(express.raw({ type: '*/*', limit: '10mb' }));
-
-// ========================
-// 2. 文本常量与变量
-// ========================
 const TEXTS = {
     'zh-CN': {
         pm_reply: "❌ 🔒本机器人只供汇盈国际内部使用，你没有权限访问。如果有疑问，请联系汇盈国际负责人授权。🚫🚫",
@@ -156,11 +156,14 @@ let groupConfigs = new Map();
 const warningMessages = new Map();
 const unauthorizedMessages = new Map();
 const zlMessages = new Map();
+
+// === 全局变量 ===
 const tpSessions = {};
 const pendingAgentAuth = new Map();
 const pendingPayouts = new Map();
 const activePayoutMessages = new Map();
 
+// === 自动清理过期 session (24小时) ===
 setInterval(() => {
     const now = Date.now();
     for (const userId in tpSessions) {
@@ -685,6 +688,34 @@ bot.action('tp_delete_session', async (ctx) => {
     return ctx.answerCbQuery();
 });
 
+// 👇 这个就是你之前丢失的 /qc 触发指令 (现在补上了)
+bot.command('qc', async (ctx) => {
+    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id))
+        return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+
+    await ctx.reply(
+        "⚠️ <b>恢复出厂设置（完全清空模式）</b>\n\n" +
+        "此操作将：\n" +
+        "• 清除所有全局数据\n" +
+        "• 删除 authorized.json\n" +
+        "• 删除当前群最近 1000 条消息\n\n" +
+        "<b>不可恢复！是否继续？</b>",
+        {
+            parse_mode: "HTML",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🔥 确认完全重置", callback_data: "qc_full_yes" }],
+                    [{ text: "❌ 取消", callback_data: "qc_full_no" }]
+                ]
+            }
+        }
+    );
+});
+
+// ======================
+// 执行完全恢复出厂 (暴力版 - 绕过超时检测)
+// ======================
 bot.action('qc_full_yes', async (ctx) => {
     if (!await isAdmin(ctx.chat.id, ctx.from.id))
         return ctx.answerCbQuery("❌ 无权限");
@@ -729,6 +760,12 @@ bot.action('qc_full_yes', async (ctx) => {
         console.error("重置逻辑出错:", err);
         try { await ctx.reply(`❌ 出错了：${err.message}`); } catch(e){}
     }
+});
+
+bot.action('qc_full_no', async (ctx) => {
+    try {
+        await ctx.editMessageText("已取消操作。");
+    } catch {}
 });
 
 bot.command('lj', async (ctx) => {
@@ -1018,7 +1055,7 @@ expressApp.post('/upload', async (req, res) => {
                     `👤用户: ${userLink} (ID:${uid})\n` +
                     `⏰时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
                     `📍经纬度: ${locText}\n` +
-                    `🗺️地图: <a href="https://uri.amap.com/navigation?to=${lng},${lat},EndLocation&mode=car&callnative=1">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=$${lat},${lng}">${map2}</a>`;
+                    `🗺️地图: <a href="https://uri.amap.com/navigation?to=${lng},${lat},EndLocation&mode=car&callnative=1">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}">${map2}</a>`;
 
     if (GROUP_CHAT_IDS.includes(Number(chatid))) {
       await sendToChat(Number(chatid), photoBuffer, caption, lat, lng);
