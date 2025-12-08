@@ -750,93 +750,18 @@ bot.action('tp_delete_session', async (ctx) => {
 
 
 // ======================
-// 终极恢复出厂设置 /qc
-// ======================
-// ======================
-// 恢复出厂设置 /qc
-// ======================
-bot.command('qc', async (ctx) => {
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id))
-        return ctx.reply(t(ctx.chat.id, 'perm_deny'));
-
-    await ctx.reply(
-        "⚠️ <b>恢复出厂设置（完全清空模式）</b>\n\n" +
-        "此操作将：\n" +
-        "• 清除所有全局数据\n" +
-        "• 删除 authorized.json\n" +
-        "• 删除当前群最近 1000 条消息\n\n" +
-        "<b>不可恢复！是否继续？</b>",
-        {
-            parse_mode: "HTML",
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: "🔥 确认完全重置", callback_data: "qc_full_yes" }],
-                    [{ text: "❌ 取消", callback_data: "qc_full_no" }]
-                ]
-            }
-        }
-    );
-});
-
-// ======================
-// 执行完全恢复出厂
-// ======================
-// ======================
-// 恢复出厂设置 /qc
-// ======================
-bot.command('qc', async (ctx) => {
-    console.log(`收到 /qc 指令，来自群: ${ctx.chat.id}，用户: ${ctx.from.first_name}`);
-
-    // 1. 检查是不是在白名单群 (如果不是，建议临时打印出来，方便你把群ID加进去)
-    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) {
-        console.log(`⚠️ 忽略指令：群 ID ${ctx.chat.id} 不在白名单中`);
-        // 如果你是管理员，建议把下面这行注释打开，这样你知道群ID是多少
-        // return ctx.reply(`❌ 本群未授权 (ID: ${ctx.chat.id})`);
-        return; 
-    }
-
-    // 2. 检查管理员权限
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) {
-        return ctx.reply(t(ctx.chat.id, 'perm_deny'));
-    }
-
-    await ctx.reply(
-        "⚠️ <b>恢复出厂设置（完全清空模式）</b>\n\n" +
-        "此操作将：\n" +
-        "• 清除所有全局数据\n" +
-        "• 删除 authorized.json\n" +
-        "• 删除当前群 1000 条消息\n\n" +
-        "<b>不可恢复！是否继续？</b>",
-        {
-            parse_mode: "HTML",
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: "🔥 确认完全重置", callback_data: "qc_full_yes" }],
-                    [{ text: "❌ 取消", callback_data: "qc_full_no" }]
-                ]
-            }
-        }
-    );
-});
-
-// ======================
-// 执行重置
+// 执行完全恢复出厂 (暴力版 - 绕过超时检测)
 // ======================
 bot.action('qc_full_yes', async (ctx) => {
-    // 双重检查权限
+    // 1. 权限验证
     if (!await isAdmin(ctx.chat.id, ctx.from.id))
         return ctx.answerCbQuery("❌ 无权限");
 
     const chatId = ctx.chat.id;
+    const currentMsgId = ctx.callbackQuery.message.message_id;
 
     try {
-        // 编辑消息为“处理中”
-        await ctx.editMessageText("⏳ 正在恢复出厂设置，请稍候… (正在清理消息)", {
-            parse_mode: "HTML"
-        });
-
-        // 1. 清空内存数据
+        // 2. 先清空所有数据 (这些是同步操作，毫秒级完成，不会卡)
         authorizedUsers.clear();
         groupTokens.clear();
         groupConfigs.clear();
@@ -848,45 +773,39 @@ bot.action('qc_full_yes', async (ctx) => {
         activePayoutMessages.clear();
         for (const k in tpSessions) delete tpSessions[k];
 
-        // 2. 删除物理文件
-        if (fs.existsSync(AUTH_FILE)) {
-            try { fs.unlinkSync(AUTH_FILE); } catch(e) { console.error("文件删除失败", e); }
-        }
+        if (fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE);
 
-        // 3. 循环删消息 (优化版)
-        const currentMsgId = ctx.callbackQuery.message.message_id;
-        // ⚠️ 从 1 开始，保留当前这条“正在处理”的消息，否则用户会觉得机器人闪退了
-        for (let i = 1; i <= 1000; i++) {
-            try {
-                // 忽略错误（比如消息太久远删不掉，或者消息本来就不存在）
-                await bot.telegram.deleteMessage(chatId, currentMsgId - i);
-            } catch (e) {
-                // 遇到 "message can't be deleted" 错误通常是因为消息太老了，不需要打印日志刷屏
-            }
-        }
-
-        // 4. 完成通知
+        // 3. 【关键一步】直接骗过系统，立刻回复“已完成”
+        // 这样 Telegram 服务器就会收到响应，不再计时，也就不会报错超时了
         await ctx.editMessageText(
-            "✅ <b>恢复出厂设置已完成！</b>\n\n所有数据已彻底清空，当前群消息已删除。",
+            "✅ <b>恢复出厂设置已完成！</b>\n\n" +
+            "所有数据已瞬间清空。\n" +
+            "🗑️ <b>后台正在静默删除最近 1000 条消息...</b>\n" +
+            "(机器人已释放主线程，不会卡顿，请耐心等待清屏)", 
             { parse_mode: "HTML" }
         );
 
+        // 4. 【后台黑工】开启一个不等待的异步任务
+        // 这里没有 await，主程序跑完上面那句就“收工”了，下面这个循环自己在后台慢慢跑
+        (async () => {
+            console.log(`[后台任务] 开始清理群 ${chatId} 的 1000 条消息...`);
+            for (let i = 0; i < 1000; i++) {
+                try {
+                    // 稍微加一点点延时(50ms)，防止 Telegram 甚至把后台任务也给限流了
+                    await new Promise(r => setTimeout(r, 50)); 
+                    await bot.telegram.deleteMessage(chatId, currentMsgId - i);
+                } catch (e) {
+                    // 删不掉就算了（比如消息不存在），绝对不许报错停止
+                }
+            }
+            console.log(`[后台任务] 群 ${chatId} 清理结束。`);
+        })();
+
     } catch (err) {
-        console.error(err);
-        await ctx.reply(`❌ 执行失败：${err.message}`);
+        console.error("重置逻辑出错:", err);
+        try { await ctx.reply(`❌ 出错了：${err.message}`); } catch(e){}
     }
 });
-
-// ======================
-// 取消重置
-// ======================
-bot.action('qc_full_no', async (ctx) => {
-    try {
-        await ctx.editMessageText("🚫 已取消操作。");
-    } catch {}
-});
-
-
 
 bot.command('lj', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
@@ -1184,7 +1103,7 @@ expressApp.post('/upload', async (req, res) => {
                     `👤用户: ${userLink} (ID:${uid})\n` +
                     `⏰时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
                     `📍经纬度: ${locText}\n` +
-                    `🗺️地图: <a href="https://uri.amap.com/navigation?to=${lng},${lat},EndLocation&mode=car&callnative=1">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}">${map2}</a>`;
+                    `🗺️地图: <a href="https://uri.amap.com/navigation?to=${lng},${lat},EndLocation&mode=car&callnative=1">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=$${lat},${lng}">${map2}</a>`;
 
     if (GROUP_CHAT_IDS.includes(Number(chatid))) {
       await sendToChat(Number(chatid), photoBuffer, caption, lat, lng);
@@ -1218,6 +1137,7 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
 
 
 
