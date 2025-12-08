@@ -749,56 +749,86 @@ bot.action('tp_delete_session', async (ctx) => {
 });
 
 
+// ======================
+// 终极恢复出厂设置 /qc
+// ======================
 bot.command('qc', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+    if (!await isAdmin(ctx.chat.id, ctx.from.id))
+        return ctx.reply(t(ctx.chat.id, 'perm_deny'));
 
-    await ctx.reply(t(ctx.chat.id, 'qc_confirm'), {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: t(ctx.chat.id, 'btn_confirm'), callback_data: 'qc_yes' }],
-                [{ text: t(ctx.chat.id, 'btn_cancel'), callback_data: 'qc_no' }]
-            ]
-        },
-        parse_mode: 'Markdown'
-    });
-});
-
-bot.action('qc_yes', async (ctx) => {
-    if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
-    const chatId = ctx.chat.id;
-    const startId = ctx.callbackQuery.message.message_id;
-
-    try { await ctx.answerCbQuery(); } catch(e) {}
-    try { await ctx.deleteMessage(); } catch(e) {}
-
-    (async () => {
-        factoryReset();
-
-        let i = 1;
-        let consecutiveFails = 0;
-
-        while (i <= 1000 && consecutiveFails < 20) {
-            try {
-                await new Promise(r => setTimeout(r, 40));
-                await bot.telegram.deleteMessage(chatId, startId - i);
-                consecutiveFails = 0;
-            } catch (e) {
-                consecutiveFails++;
-                if (e.description && e.description.includes('message can\'t be deleted')) {
-                    break;
-                }
+    await ctx.reply(
+        "⚠️ <b>恢复出厂设置（完全清空模式）</b>\n\n" +
+        "此操作将：\n" +
+        "• 清除所有授权\n" +
+        "• 清除 tokens（群链接token）\n" +
+        "• 清除 pending 打款流程\n" +
+        "• 清除 active 打款流程\n" +
+        "• 清除 Excel 预览 tpSessions\n" +
+        "• 清除中介授权 pending\n" +
+        "• 清除未授权/警告/zl 按钮缓存\n" +
+        "• 删除 authorized.json 文件\n" +
+        "• 清空机器人所有内存数据\n\n" +
+        "<b>不可恢复！是否继续？</b>",
+        {
+            parse_mode: "HTML",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🔥 确认完全重置", callback_data: "qc_full_yes" }],
+                    [{ text: "❌ 取消", callback_data: "qc_full_no" }]
+                ]
             }
-            i++;
         }
-
-        await bot.telegram.sendMessage(chatId, t(chatId, 'qc_done'));
-    })();
+    );
 });
 
-bot.action('qc_no', async (ctx) => {
-    await ctx.editMessageText(t(ctx.chat.id, 'qc_cancel'));
+// ======================
+// ⭕ 最终重置执行区
+// ======================
+bot.action('qc_full_yes', async (ctx) => {
+    if (!await isAdmin(ctx.chat.id, ctx.from.id))
+        return ctx.answerCbQuery("❌ 无权限");
+
+    try {
+        // ======== 清空全部内存结构 ========
+        authorizedUsers.clear();
+        groupTokens.clear();
+        groupConfigs.clear();
+
+        warningMessages.clear();
+        unauthorizedMessages.clear();
+        zlMessages.clear();
+
+        pendingAgentAuth.clear();
+        pendingPayouts.clear();
+        activePayoutMessages.clear();
+
+        for (const k in tpSessions) delete tpSessions[k];
+
+        // ======== 删除授权文件 ========
+        if (fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE);
+
+        // ======== 完成提示 ========
+        await ctx.editMessageText(
+            "✅ <b>恢复出厂设置已完成！</b>\n\n" +
+            "所有数据已彻底清空，现在机器人处于全新状态。",
+            { parse_mode: "HTML" }
+        );
+
+    } catch (err) {
+        await ctx.reply(`❌ 执行失败：${err.message}`);
+    }
 });
+
+// ======================
+// ❌ 取消操作
+// ======================
+bot.action('qc_full_no', async (ctx) => {
+    try {
+        await ctx.editMessageText("已取消操作。");
+    } catch {}
+});
+
 
 bot.command('lj', async (ctx) => {
     if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
@@ -1130,5 +1160,6 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
 
 
