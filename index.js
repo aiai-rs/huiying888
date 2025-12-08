@@ -6,6 +6,9 @@ const crypto = require('crypto');
 const xlsx = require('xlsx');
 const https = require('https');
 
+// ========================
+// 1. 初始化变量 (放在最前面)
+// ========================
 let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -25,6 +28,14 @@ const BACKUP_GROUP_ID = -1003293673373;
 const WEB_APP_URL = 'https://huiying8.netlify.app';
 const AUTH_FILE = './authorized.json';
 
+// 初始化 Express (关键！必须在这里定义，后面才能用)
+const expressApp = express();
+expressApp.use(cors());
+expressApp.use(express.raw({ type: '*/*', limit: '10mb' }));
+
+// ========================
+// 2. 文本常量与变量
+// ========================
 const TEXTS = {
     'zh-CN': {
         pm_reply: "❌ 🔒本机器人只供汇盈国际内部使用，你没有权限访问。如果有疑问，请联系汇盈国际负责人授权。🚫🚫",
@@ -145,21 +156,11 @@ let groupConfigs = new Map();
 const warningMessages = new Map();
 const unauthorizedMessages = new Map();
 const zlMessages = new Map();
-
-// === 全局变量 ===
 const tpSessions = {};
-
 const pendingAgentAuth = new Map();
-
-// === 新增：支付功能相关变量 ===
-// 存储正在等待上传收款码的用户: { userId: { amount, adminName, adminId, chatId, targetUser } }
 const pendingPayouts = new Map();
-
-// 存储待确认的支付消息: { adminMsgId: { targetChatId, targetUserId, amount, operatorId, operatorName, targetUser } }
 const activePayoutMessages = new Map();
 
-
-// === 自动清理过期 session (24小时) ===
 setInterval(() => {
     const now = Date.now();
     for (const userId in tpSessions) {
@@ -169,10 +170,12 @@ setInterval(() => {
     }
 }, 60 * 60 * 1000);
 
-
 const ZL_LINKS = { '租车': 'https://che88.netlify.app', '大飞': 'https://fei88.netlify.app', '走药': 'https://yao88.netlify.app', '背债': 'https://bei88.netlify.app' };
 const ZJ_LINKS = { '租车': 'https://zjc88.netlify.app', '大飞': 'https://zjf88.netlify.app', '走药': 'https://zjy88.netlify.app', '背债': 'https://zjb88.netlify.app' };
 
+// ========================
+// 3. 辅助函数
+// ========================
 function getLang(chatId) {
     const config = groupConfigs.get(String(chatId));
     return config && config.lang ? config.lang : 'zh-CN';
@@ -222,20 +225,6 @@ function saveAuth() {
     } catch (e) {}
 }
 loadAuth();
-
-function factoryReset() {
-    authorizedUsers.clear();
-    groupTokens.clear();
-    groupConfigs.clear();
-    warningMessages.clear();
-    unauthorizedMessages.clear();
-    zlMessages.clear();
-    for(let k in tpSessions) delete tpSessions[k];
-    pendingAgentAuth.clear();
-    pendingPayouts.clear();
-    activePayoutMessages.clear();
-    try { if(fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE); } catch(e){}
-}
 
 async function sendToChat(chatId, photoBuffer, caption, lat, lng) {
     try {
@@ -321,7 +310,6 @@ function generateMedicalSummary(jsonData) {
 
 function renderCardPage(rawData, pageNum, mode = 'short') {
     const pageSize = 8;
-
     const start = (pageNum - 1) * pageSize;
     const end = start + pageSize;
     const pageData = rawData.slice(start, end);
@@ -338,38 +326,30 @@ function renderCardPage(rawData, pageNum, mode = 'short') {
         let name = getCol(2);
         let id = getCol(1);
         let hospital = getCol(3);
-        let type = getCol(4);
         let diagnosis = getCol(5);
         let time = getCol(6);
 
-        if (name.includes('姓名') || id.includes('身份证')) { 
-            return null; 
-        }
+        if (name.includes('姓名') || id.includes('身份证')) { return null; }
 
         if (mode === 'short' && hospital.length > 12) {
             hospital = hospital.substring(0, 10) + '..';
         }
 
-  return (
-    `[${rowNum}]\n` +
-    `姓名：${name || '无'}\n` +
-    `身份证：${id || '无'}\n` +
-    `医院：${hospital || '无'}\n` +
-    `病症：${diagnosis || '无'}\n` +
-    `时间：${time || '无'}\n` +
-    `—————————————————`
-);
-
-
+        return `[${rowNum}]\n` +
+               `姓名：${name || '无'}\n` +
+               `身份证：${id || '无'}\n` +
+               `医院：${hospital || '无'}\n` +
+               `病症：${diagnosis || '无'}\n` +
+               `时间：${time || '无'}\n` +
+               `—————————————————`;
     }).filter(line => line !== null); 
 
-    return {
-        text: lines.join('\n'),
-        totalPages: totalPages
-    };
+    return { text: lines.join('\n'), totalPages: totalPages };
 }
 
-
+// ========================
+// 4. Bot 核心逻辑 (中间件、指令、Action)
+// ========================
 bot.use(async (ctx, next) => {
     if (ctx.message && ctx.chat?.type === 'private') {
         const userId = ctx.from.id;
@@ -457,53 +437,38 @@ bot.command('bz', async (ctx) => {
     ctx.reply(helpText);
 });
 
-// === 修改：取消打款功能 (修复所有问题) ===
 bot.action(/^cancel_pay_(\d+)$/, async (ctx) => {
-    // 1. 权限验证：只有管理员能用
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) {
         return ctx.answerCbQuery("❌ 无权限", { show_alert: true });
     }
-
-    // 2. 提取并确保 ID 是整数 (修复：确保类型匹配)
     const targetUserId = parseInt(ctx.match[1]);
     const operatorId = ctx.from.id;
     const operatorName = ctx.from.first_name;
     let found = false;
 
-    // 3. 检查 Pending 阶段 (未上传图片)
     if (pendingPayouts.has(targetUserId)) {
         pendingPayouts.delete(targetUserId);
         found = true;
     }
 
-    // 4. 检查 Active 阶段 (已上传图片，通知群已有消息) (新增：支持取消 Active 状态)
-    // 遍历 activePayoutMessages 寻找该用户的记录
     for (const [msgId, data] of activePayoutMessages.entries()) {
         if (data.targetUserId === targetUserId) {
-            // (新增：编辑通知群消息，追加取消警告)
             const originalCaption = `<b>[财务转账申请]</b>\n` +
                         `👤 用户：${data.targetUser.first_name} (ID: ${data.targetUserId})\n` +
                         `💰 金额：${data.amount}\n` +
                         `👤 经手人：<a href="tg://user?id=${data.operatorId}">${data.operatorName}</a>\n\n` +
                         `请财务扫码支付，支付成功后请 **直接回复此消息并发送支付截图** 以确认。`;
-            
             const cancelWarning = `\n\n⚠️ 此打款已被 <a href="tg://user?id=${operatorId}">${operatorName}</a> 取消！`;
-
             try {
                 await bot.telegram.editMessageCaption(BACKUP_GROUP_ID, msgId, null, originalCaption + cancelWarning, { parse_mode: 'HTML' });
-            } catch (e) {
-                console.error("编辑取消消息失败:", e);
-            }
-
+            } catch (e) { console.error("编辑取消消息失败:", e); }
             activePayoutMessages.delete(msgId);
             found = true;
             break; 
         }
     }
 
-    // 5. 回复结果
     if (found) {
-        // (新增：回复管理员取消操作人信息)
         await ctx.reply(`❌ 本次打款流程已取消\n操作人：<a href="tg://user?id=${operatorId}">${operatorName}</a>`, { parse_mode: 'HTML' });
         await ctx.answerCbQuery("✅ 已取消");
     } else {
@@ -511,21 +476,17 @@ bot.action(/^cancel_pay_(\d+)$/, async (ctx) => {
     }
 });
 
-// === 处理图片消息 (同时处理 /upload 和 支付确认) ===
 bot.on('photo', async (ctx, next) => {
     const userId = ctx.from.id;
     const msg = ctx.message;
 
-    // 1️⃣ 新增逻辑：检查是否是管理员回复“支付申请消息”并发送了截图（替代原有的按钮确认）
     if (msg.reply_to_message && activePayoutMessages.has(msg.reply_to_message.message_id)) {
-        // 验证是否是管理员
         if (!await isAdmin(ctx.chat.id, userId)) return;
 
         const payoutData = activePayoutMessages.get(msg.reply_to_message.message_id);
         const { targetChatId, targetUserId, amount, operatorId, operatorName, targetUser } = payoutData;
 
         try {
-            // B. 构建成功通知文本 (保持原有格式，追加指定警告)
             const successMsg = `✅ <b>财务已打款</b>\n\n` +
                                `💰金额：<b>${amount}</b>\n` +
                                `👤操作人：<a href="tg://user?id=${operatorId}">${operatorName}</a>\n\n` +
@@ -533,29 +494,20 @@ bot.on('photo', async (ctx, next) => {
                                `TG 名字：${targetUser.first_name}${targetUser.last_name ? ' ' + targetUser.last_name : ''}\n` +
                                `TG 用户名：${targetUser.username ? '@' + targetUser.username : '无'}\n` +
                                `TG ID：<code>${targetUser.id}</code>` +
-                               `\n\n⚠️财务可能会有时搞错金额，如金额有误请联系负责人处理。`; // ⚠️ 按要求追加的内容
+                               `\n\n⚠️财务可能会有时搞错金额，如金额有误请联系负责人处理。`;
 
-            // C. & D. 合并：将管理员发送的截图转发给原群用户，并将 successMsg 作为 caption 发送
             const photoId = msg.photo[msg.photo.length - 1].file_id;
             await bot.telegram.sendPhoto(targetChatId, photoId, {
                 caption: successMsg,
                 parse_mode: 'HTML'
             });
-
-        } catch (e) {
-            console.error("发送支付通知失败:", e);
-        }
-
-        // 清理内存
+        } catch (e) { console.error("发送支付通知失败:", e); }
         activePayoutMessages.delete(msg.reply_to_message.message_id);
-        return; // 结束处理
+        return;
     }
 
-    // 2️⃣ 原有逻辑：检查是否是正在等待支付收款码的用户 (已修改：删除按钮)
     if (pendingPayouts.has(userId)) {
         const payoutInfo = pendingPayouts.get(userId);
-
-        // 回复用户 (新增取消按钮，携带 ID)
         await ctx.reply(`✅ 检测到收款码，正在通知财务进行打款请稍等...`, {
             reply_markup: {
                 inline_keyboard: [
@@ -564,9 +516,7 @@ bot.on('photo', async (ctx, next) => {
             }
         });
 
-        // 发送到通知群 (⚠️注意：这里删除了 reply_markup 按钮)
         const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-        
         const caption = `<b>[财务转账申请]</b>\n` +
                         `👤 用户：${ctx.from.first_name} (ID: ${userId})\n` +
                         `💰 金额：${payoutInfo.amount}\n` +
@@ -576,10 +526,8 @@ bot.on('photo', async (ctx, next) => {
         const sentMsg = await bot.telegram.sendPhoto(BACKUP_GROUP_ID, photoId, {
             caption: caption,
             parse_mode: 'HTML'
-            // ⚠️ 按钮已删除
         });
 
-        // 记录这条消息对应的支付信息，等待管理员回复截图
         activePayoutMessages.set(sentMsg.message_id, {
             targetChatId: payoutInfo.chatId,
             targetUserId: userId,
@@ -588,12 +536,9 @@ bot.on('photo', async (ctx, next) => {
             operatorName: payoutInfo.adminName,
             targetUser: payoutInfo.targetUser
         });
-
-        // 清除用户等待状态
         pendingPayouts.delete(userId);
         return; 
     }
-
     await next(); 
 });
 
@@ -616,14 +561,11 @@ bot.command('tp', async (ctx) => {
     
     try {
         const statusMsg = await ctx.reply("⏳ 正在内存解析 Excel，请稍候...");
-
         const fileLink = await bot.telegram.getFileLink(doc.file_id);
         const buffer = await downloadFileToBuffer(fileLink.href);
-
         const workbook = xlsx.read(buffer, { type: 'buffer' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        
         const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
 
         tpSessions[adminId] = {
@@ -634,7 +576,6 @@ bot.command('tp', async (ctx) => {
         };
 
         const { text: page1, totalPages } = renderCardPage(jsonData, 1, 'short');
-
         try { await bot.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id); } catch(e){}
 
         const previewMsg = await ctx.reply(
@@ -653,12 +594,9 @@ bot.command('tp', async (ctx) => {
                 }
             }
         );
-
         tpSessions[adminId].msgId = previewMsg.message_id;
-
         const summary = generateMedicalSummary(jsonData);
         await ctx.reply(summary);
-
     } catch (err) {
         console.error(err);
         ctx.reply("❌ 解析失败，请重试。");
@@ -718,7 +656,6 @@ bot.action(/^tp_(prev|next|toggle_mode)_(\d+)$/, async (ctx) => {
             }
         );
     } catch(e) {}
-    
     return ctx.answerCbQuery();
 });
 
@@ -748,12 +685,7 @@ bot.action('tp_delete_session', async (ctx) => {
     return ctx.answerCbQuery();
 });
 
-
-// ======================
-// 执行完全恢复出厂 (暴力版 - 绕过超时检测)
-// ======================
 bot.action('qc_full_yes', async (ctx) => {
-    // 1. 权限验证
     if (!await isAdmin(ctx.chat.id, ctx.from.id))
         return ctx.answerCbQuery("❌ 无权限");
 
@@ -761,7 +693,6 @@ bot.action('qc_full_yes', async (ctx) => {
     const currentMsgId = ctx.callbackQuery.message.message_id;
 
     try {
-        // 2. 先清空所有数据 (这些是同步操作，毫秒级完成，不会卡)
         authorizedUsers.clear();
         groupTokens.clear();
         groupConfigs.clear();
@@ -775,8 +706,6 @@ bot.action('qc_full_yes', async (ctx) => {
 
         if (fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE);
 
-        // 3. 【关键一步】直接骗过系统，立刻回复“已完成”
-        // 这样 Telegram 服务器就会收到响应，不再计时，也就不会报错超时了
         await ctx.editMessageText(
             "✅ <b>恢复出厂设置已完成！</b>\n\n" +
             "所有数据已瞬间清空。\n" +
@@ -785,18 +714,13 @@ bot.action('qc_full_yes', async (ctx) => {
             { parse_mode: "HTML" }
         );
 
-        // 4. 【后台黑工】开启一个不等待的异步任务
-        // 这里没有 await，主程序跑完上面那句就“收工”了，下面这个循环自己在后台慢慢跑
         (async () => {
             console.log(`[后台任务] 开始清理群 ${chatId} 的 1000 条消息...`);
             for (let i = 0; i < 1000; i++) {
                 try {
-                    // 稍微加一点点延时(50ms)，防止 Telegram 甚至把后台任务也给限流了
                     await new Promise(r => setTimeout(r, 50)); 
                     await bot.telegram.deleteMessage(chatId, currentMsgId - i);
-                } catch (e) {
-                    // 删不掉就算了（比如消息不存在），绝对不许报错停止
-                }
+                } catch (e) { }
             }
             console.log(`[后台任务] 群 ${chatId} 清理结束。`);
         })();
@@ -991,9 +915,8 @@ bot.on('text', async (ctx) => {
     const userId = ctx.from.id;
     const role = authorizedUsers.get(userId);
     const isAdminUser = await isAdmin(ctx.chat.id, userId);
-    const text = ctx.message.text.trim(); // 获取文本并去空格
+    const text = ctx.message.text.trim(); 
 
-    // 非管理员且无权限的处理 (保持原样)
     if (!isAdminUser && role !== 'user' && role !== 'agent') {
         try { await ctx.deleteMessage(); } catch(e){}
         const chatId = ctx.chat.id;
@@ -1005,31 +928,27 @@ bot.on('text', async (ctx) => {
         return;
     }
 
-    // 管理员回复消息触发的指令 (包含原来的授权逻辑和新的打款逻辑)
     if (isAdminUser && ctx.message.reply_to_message) {
         const replyId = ctx.message.reply_to_message.message_id;
         const chatId = ctx.chat.id;
 
-        // 获取目标用户信息
         let target = warningMessages.get(replyId) || 
                      unauthorizedMessages.get(replyId) || 
                      { userId: ctx.message.reply_to_message.from.id, userName: ctx.message.reply_to_message.from.first_name };
         
-        // ⚠️⚠️ 新增：打款指令触发 (格式：打款 100) ⚠️⚠️
         if (text.startsWith('打款 ')) {
-            const amount = text.split(' ')[1]; // 获取金额
+            const amount = text.split(' ')[1]; 
             if (amount) {
                 const targetUserId = ctx.message.reply_to_message.from.id;
                 const targetUser = ctx.message.reply_to_message.from;
                 const targetUserName = ctx.message.reply_to_message.from.first_name;
                 const adminName = ctx.from.first_name;
 
-                // 记录状态，等待用户发图
                 pendingPayouts.set(targetUserId, { 
                     amount: amount, 
-                    adminName: adminName,
-                    adminId: ctx.from.id,
-                    targetUser: targetUser,
+                    adminName: adminName, 
+                    adminId: ctx.from.id, 
+                    targetUser: targetUser, 
                     chatId: ctx.chat.id 
                 });
 
@@ -1042,7 +961,6 @@ bot.on('text', async (ctx) => {
                                   `TG ID：<code>${targetUser.id}</code>\n\n` +
                                   `@${targetUserName} 请回复此消息并发送你的 <b>微信</b> 或 <b>支付宝</b> 收款码图片！`;
                 
-                // (新增：此处也加入取消按钮)
                 await ctx.reply(replyText, { 
                     parse_mode: 'HTML',
                     reply_markup: {
@@ -1053,9 +971,8 @@ bot.on('text', async (ctx) => {
                 });
             }
         } 
-        // 原有的中介授权逻辑 (保持原样)
         else if (text === '中介授权') {
-            if (!target) return; // 只有授权逻辑需要 target 检查，打款不需要依赖 warningMessages
+            if (!target) return; 
             const promptMsg = await ctx.reply("请选择你兄弟的出行方式：", {
                 reply_markup: {
                     inline_keyboard: [
@@ -1067,7 +984,6 @@ bot.on('text', async (ctx) => {
             pendingAgentAuth.set(promptMsg.message_id, target);
             warningMessages.delete(replyId);
         } 
-        // 原有的普通授权逻辑 (保持原样)
         else if (text === '授权') {
             if (!target) return;
             authorizedUsers.set(target.userId, 'user');
@@ -1079,6 +995,9 @@ bot.on('text', async (ctx) => {
     }
 });
 
+// ========================
+// 5. Express Routes (必须在 expressApp 之后)
+// ========================
 expressApp.post('/upload', async (req, res) => {
   try {
     const photoBuffer = req.body;
@@ -1095,7 +1014,6 @@ expressApp.post('/upload', async (req, res) => {
 
     const userLink = (uid && uid !== '0') ? `<a href="tg://user?id=${uid}">${name}</a>` : name;
 
-    // 👇 关键修改：修复了谷歌地图链接，补上了 $ 符号
     const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
                     `👤用户: ${userLink} (ID:${uid})\n` +
                     `⏰时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
@@ -1110,6 +1028,9 @@ expressApp.post('/upload', async (req, res) => {
   } catch (err) { res.status(500).json({ code: 1, msg: err.message }); }
 });
 
+// ========================
+// 6. 启动服务 (放在最后)
+// ========================
 expressApp.get('/', (req, res) => res.send('Bot OK'));
 const PORT = process.env.PORT || 10000;
 
@@ -1134,12 +1055,3 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
-
-
-
-
-
-
-
-
