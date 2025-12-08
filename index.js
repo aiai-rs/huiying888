@@ -62,7 +62,7 @@ const TEXTS = {
         hc_desc: "换车安全拍照",
         zjkh_desc: "中介专用链接",
         boss_desc: "Boss 查崗",
-        lg_desc: "龙哥查岗",
+        lg_desc: "龙哥查崗",
         sx_desc: "刷新链接 (旧链接失效)",
         zl_desc: "招聘申请",
         zj_desc: "中介申请",
@@ -138,7 +138,7 @@ const TEXTS = {
     }
 };
 
-// === 核心数据存储 (Map/Object) ===
+// === 核心数据存储 ===
 let authorizedUsers = new Map();
 let groupTokens = new Map();
 let groupConfigs = new Map();
@@ -146,19 +146,16 @@ const warningMessages = new Map();
 const unauthorizedMessages = new Map();
 const zlMessages = new Map();
 
-// === 功能性数据 (Excel / 支付) ===
+// === 功能性数据 ===
 const tpSessions = {}; // Excel 预览缓存
 const pendingAgentAuth = new Map(); // 等待授权中介
-// 1. 等待用户上传收款码
-const pendingPayouts = new Map();
-// 2. 等待管理员回传截图/驳回
-const activePayoutMessages = new Map();
+const pendingPayouts = new Map(); // 等待用户上传收款码
+const activePayoutMessages = new Map(); // 等待管理员回传截图/驳回
 
 const ZL_LINKS = { '租车': 'https://che88.netlify.app', '大飞': 'https://fei88.netlify.app', '走药': 'https://yao88.netlify.app', '背债': 'https://bei88.netlify.app' };
 const ZJ_LINKS = { '租车': 'https://zjc88.netlify.app', '大飞': 'https://zjf88.netlify.app', '走药': 'https://zjy88.netlify.app', '背债': 'https://zjb88.netlify.app' };
 
 // === 辅助函数 ===
-
 function getLang(chatId) {
     const config = groupConfigs.get(String(chatId));
     return config && config.lang ? config.lang : 'zh-CN';
@@ -209,10 +206,8 @@ function saveAuth() {
 }
 loadAuth();
 
-// === 核心：一键重置函数 (彻底清除所有数据) ===
+// === 核心：一键重置函数 (已移除 reset 相关 console.log) ===
 function factoryReset() {
-    console.log('🔥 正在执行 /qc 彻底重置...');
-
     // 1. 清空基础配置与权限
     authorizedUsers.clear();
     groupTokens.clear();
@@ -231,14 +226,13 @@ function factoryReset() {
     pendingPayouts.clear();
     activePayoutMessages.clear(); 
 
-    // 5. 物理删除本地文件
+    // 5. 物理删除本地文件 (不打印日志)
     try { 
         if(fs.existsSync(AUTH_FILE)) {
             fs.unlinkSync(AUTH_FILE);
-            console.log('✅ 配置文件已物理删除');
         }
     } catch(e) {
-        console.error('❌ 删除文件失败:', e);
+        // 忽略文件删除错误
     }
 }
 
@@ -392,7 +386,7 @@ bot.use(async (ctx, next) => {
                            `汇盈国际 - 安全监控系统`;
         try {
             await bot.telegram.sendMessage(BACKUP_GROUP_ID, reportText, { parse_mode: 'Markdown' });
-        } catch (e) { console.error('发送警报失败', e); }
+        } catch (e) { }
         return;
     }
     await next();
@@ -489,7 +483,7 @@ bot.action(/^cancel_pay_(\d+)$/, async (ctx) => {
 
             try {
                 await bot.telegram.editMessageCaption(BACKUP_GROUP_ID, msgId, null, originalCaption + cancelWarning, { parse_mode: 'HTML' });
-            } catch (e) { console.error("编辑取消消息失败:", e); }
+            } catch (e) { }
 
             activePayoutMessages.delete(msgId);
             found = true;
@@ -505,7 +499,7 @@ bot.action(/^cancel_pay_(\d+)$/, async (ctx) => {
     }
 });
 
-// === 核心逻辑修改：处理图片消息 (新增：驳回按钮 / 管理员确认) ===
+// === 处理图片消息 ===
 bot.on('photo', async (ctx, next) => {
     const userId = ctx.from.id;
     const msg = ctx.message;
@@ -541,14 +535,13 @@ bot.on('photo', async (ctx, next) => {
                 ctx.chat.id, 
                 msg.reply_to_message.message_id, 
                 null, 
-                msg.reply_to_message.caption + `\n\n✅ <b>已由管理员发送截图结单</b>`, 
+                msg.reply_to_message.caption + `\n\n✅ <b>已打款</b>`, 
                 { parse_mode: 'HTML' } 
             );
             
-            await ctx.reply("✅ 已通知用户并结单。");
+            await ctx.reply("✅ 已通知用户。");
 
         } catch (e) {
-            console.error("发送支付通知失败:", e);
             await ctx.reply("❌ 发送失败，可能是用户已屏蔽机器人。");
         }
 
@@ -604,7 +597,7 @@ bot.on('photo', async (ctx, next) => {
     await next(); 
 });
 
-// === 新增：处理财务驳回按钮动作 ===
+// === 处理财务驳回按钮动作 ===
 bot.action('reject_pay_btn', async (ctx) => {
     // 权限验证
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) {
@@ -631,10 +624,10 @@ bot.action('reject_pay_btn', async (ctx) => {
             data.targetChatId,
             `❌ <b>打款申请被驳回</b>\n\n` +
             `你的打款申请（金额：${data.amount}）已被财务驳回。\n` +
-            `如有疑问，请联系负责人。`,
+            `⚠️如有疑问，请联系负责人。`,
             { parse_mode: 'HTML' }
         );
-    } catch (e) { console.error("通知用户驳回失败", e); }
+    } catch (e) { }
 
     // 更新通知群消息（移除按钮，显示驳回人）
     try {
@@ -642,7 +635,7 @@ bot.action('reject_pay_btn', async (ctx) => {
             ctx.callbackQuery.message.caption + `\n\n❌ <b>已被 ${operatorName} 驳回</b>`,
             { parse_mode: 'HTML' }
         );
-    } catch (e) { console.error("更新驳回消息失败", e); }
+    } catch (e) { }
 
     // 清理数据
     activePayoutMessages.delete(msgId);
@@ -713,7 +706,6 @@ bot.command('tp', async (ctx) => {
         await ctx.reply(summary);
 
     } catch (err) {
-        console.error(err);
         ctx.reply("❌ 解析失败，请重试。");
     }
 });
@@ -817,7 +809,7 @@ bot.command('qc', async (ctx) => {
     });
 });
 
-// === 🔥 核心修改：防崩溃 + 进度通知版 /qc ===
+// === 防崩溃 + 进度通知版 /qc (无控制台日志) ===
 bot.action('qc_yes', async (ctx) => {
     if (!await isAdmin(ctx.chat.id, ctx.from.id)) return;
     const chatId = ctx.chat.id;
@@ -836,7 +828,7 @@ bot.action('qc_yes', async (ctx) => {
         );
     } catch(e) { try { await ctx.reply("⏳ 正在后台重置中..."); } catch(e){} }
 
-    // 3. 执行内存重置
+    // 3. 执行内存重置 (无日志)
     factoryReset();
 
     // 4. 后台异步删消息 (防卡死)
@@ -1171,17 +1163,21 @@ expressApp.get('/', (req, res) => res.send('Bot OK'));
 const PORT = process.env.PORT || 10000;
 
 expressApp.listen(PORT, () => {
+    // ✅ 保留启动日志
     console.log(`Server running on port ${PORT}`);
 
     const startBot = async () => {
         try {
             await bot.launch({ dropPendingUpdates: true });
+            // ✅ 保留启动成功日志
             console.log('Telegram Bot Started Successfully!');
         } catch (err) {
             if (err.response && err.response.error_code === 409) {
+                // ✅ 保留 409 冲突重试日志 (启动相关)
                 console.log('Conflict 409: Previous bot instance is still active. Waiting 5s for it to close...');
                 setTimeout(startBot, 5000);
             } else {
+                // ✅ 保留严重错误日志
                 console.error('Bot 启动失败:', err);
             }
         }
