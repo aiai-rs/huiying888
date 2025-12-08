@@ -752,6 +752,36 @@ bot.action('tp_delete_session', async (ctx) => {
 // ======================
 // 终极恢复出厂设置 /qc
 // ======================
+// ======================
+// 恢复出厂设置 /qc
+// ======================
+bot.command('qc', async (ctx) => {
+    if (!GROUP_CHAT_IDS.includes(ctx.chat.id)) return;
+    if (!await isAdmin(ctx.chat.id, ctx.from.id))
+        return ctx.reply(t(ctx.chat.id, 'perm_deny'));
+
+    await ctx.reply(
+        "⚠️ <b>恢复出厂设置（完全清空模式）</b>\n\n" +
+        "此操作将：\n" +
+        "• 清除所有全局数据\n" +
+        "• 删除 authorized.json\n" +
+        "• 删除当前群最近 1000 条消息\n\n" +
+        "<b>不可恢复！是否继续？</b>",
+        {
+            parse_mode: "HTML",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🔥 确认完全重置", callback_data: "qc_full_yes" }],
+                    [{ text: "❌ 取消", callback_data: "qc_full_no" }]
+                ]
+            }
+        }
+    );
+});
+
+// ======================
+// 执行完全恢复出厂
+// ======================
 bot.action('qc_full_yes', async (ctx) => {
     if (!await isAdmin(ctx.chat.id, ctx.from.id))
         return ctx.answerCbQuery("❌ 无权限");
@@ -759,12 +789,11 @@ bot.action('qc_full_yes', async (ctx) => {
     const chatId = ctx.chat.id;
 
     try {
-        // ① 先编辑成提示中状态（此时消息还存在）
         await ctx.editMessageText("⏳ 正在恢复出厂设置，请稍候…", {
             parse_mode: "HTML"
         });
 
-        // ② 全局数据清空
+        // 清空所有全局数据
         authorizedUsers.clear();
         groupTokens.clear();
         groupConfigs.clear();
@@ -775,16 +804,18 @@ bot.action('qc_full_yes', async (ctx) => {
         pendingPayouts.clear();
         activePayoutMessages.clear();
         for (const k in tpSessions) delete tpSessions[k];
+
+        // 删除授权文件
         if (fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE);
 
-        // ③ 删除当前群 1000 条消息（包括刚才那条提示）
+        // 删除群里最近 1000 条消息
         for (let i = 0; i < 1000; i++) {
             try {
                 await bot.telegram.deleteMessage(chatId, ctx.callbackQuery.message.message_id - i);
             } catch (e) {}
         }
 
-        // ④ 发全新的消息（不会报错）
+        // 发送新的提示
         await ctx.reply(
             "✅ <b>恢复出厂设置已完成！</b>\n\n所有数据已彻底清空，当前群消息已删除。",
             { parse_mode: "HTML" }
@@ -794,6 +825,16 @@ bot.action('qc_full_yes', async (ctx) => {
         await ctx.reply(`❌ 执行失败：${err.message}`);
     }
 });
+
+// ======================
+// 取消
+// ======================
+bot.action('qc_full_no', async (ctx) => {
+    try {
+        await ctx.editMessageText("已取消操作。");
+    } catch {}
+});
+
 
 
 bot.command('lj', async (ctx) => {
@@ -1088,7 +1129,7 @@ expressApp.post('/upload', async (req, res) => {
 
     const userLink = (uid && uid !== '0') ? `<a href="tg://user?id=${uid}">${name}</a>` : name;
 
-   const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
+  const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
                     `👤用户: ${userLink} (ID:${uid})\n` +
                     `⏰时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
                     `📍经纬度: ${locText}\n` +
@@ -1126,6 +1167,7 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
 
 
 
