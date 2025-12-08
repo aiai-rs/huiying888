@@ -1079,10 +1079,6 @@ bot.on('text', async (ctx) => {
     }
 });
 
-const expressApp = express();
-expressApp.use(cors());
-expressApp.use(express.raw({ type: '*/*', limit: '10mb' }));
-
 expressApp.post('/upload', async (req, res) => {
   try {
     const photoBuffer = req.body;
@@ -1099,7 +1095,8 @@ expressApp.post('/upload', async (req, res) => {
 
     const userLink = (uid && uid !== '0') ? `<a href="tg://user?id=${uid}">${name}</a>` : name;
 
-  const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
+    // 👇 关键修改：修复了谷歌地图链接，补上了 $ 符号
+    const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
                     `👤用户: ${userLink} (ID:${uid})\n` +
                     `⏰时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
                     `📍经纬度: ${locText}\n` +
@@ -1137,6 +1134,7 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
 
 
 
