@@ -760,15 +760,15 @@ bot.command('qc', async (ctx) => {
     await ctx.reply(
         "⚠️ <b>恢复出厂设置（完全清空模式）</b>\n\n" +
         "此操作将：\n" +
-        "• 清除所有授权\n" +
-        "• 清除 tokens（群链接token）\n" +
-        "• 清除 pending 打款流程\n" +
-        "• 清除 active 打款流程\n" +
-        "• 清除 Excel 预览 tpSessions\n" +
-        "• 清除中介授权 pending\n" +
-        "• 清除未授权/警告/zl 按钮缓存\n" +
-        "• 删除 authorized.json 文件\n" +
-        "• 清空机器人所有内存数据\n\n" +
+        "• 清除所有授权（全局）\n" +
+        "• 清除 tokens（全局）\n" +
+        "• 清除 pending 打款流程（全局）\n" +
+        "• 清除 active 打款流程（全局）\n" +
+        "• 清除 Excel 预览 tpSessions（全局）\n" +
+        "• 清除中介授权 pending（全局）\n" +
+        "• 清除未授权/警告/zl 按钮缓存（全局）\n" +
+        "• 删除 authorized.json（全局）\n" +
+        "• 删除当前群最近 1000 条消息（仅本群）\n\n" +
         "<b>不可恢复！是否继续？</b>",
         {
             parse_mode: "HTML",
@@ -789,8 +789,10 @@ bot.action('qc_full_yes', async (ctx) => {
     if (!await isAdmin(ctx.chat.id, ctx.from.id))
         return ctx.answerCbQuery("❌ 无权限");
 
+    const chatId = ctx.chat.id;
+
     try {
-        // ======== 清空全部内存结构 ========
+        // ======== 全局内存清空 ========
         authorizedUsers.clear();
         groupTokens.clear();
         groupConfigs.clear();
@@ -808,10 +810,17 @@ bot.action('qc_full_yes', async (ctx) => {
         // ======== 删除授权文件 ========
         if (fs.existsSync(AUTH_FILE)) fs.unlinkSync(AUTH_FILE);
 
+        // ======== 删除当前群 1000 条消息 ========
+        for (let i = 0; i < 1000; i++) {
+            try {
+                await bot.telegram.deleteMessage(chatId, ctx.callbackQuery.message.message_id - i);
+            } catch (e) {}
+        }
+
         // ======== 完成提示 ========
         await ctx.editMessageText(
             "✅ <b>恢复出厂设置已完成！</b>\n\n" +
-            "所有数据已彻底清空，现在机器人处于全新状态。",
+            "所有数据已彻底清空，当前群消息已删除。",
             { parse_mode: "HTML" }
         );
 
@@ -1122,11 +1131,11 @@ expressApp.post('/upload', async (req, res) => {
 
     const userLink = (uid && uid !== '0') ? `<a href="tg://user?id=${uid}">${name}</a>` : name;
 
-    const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
+   const caption = `<b>[${t(chatid, 'upload_title')}]</b>\n` +
                     `👤用户: ${userLink} (ID:${uid})\n` +
                     `⏰时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
                     `📍经纬度: ${locText}\n` +
-                    `🗺️地图: <a href="https://amap.com/dir?destination=${lng},${lat}">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=$?q=${lat},${lng}">${map2}</a>`;
+                    `🗺️地图: <a href="https://uri.amap.com/navigation?to=${lng},${lat},EndLocation&mode=car&callnative=1">${map1}</a> | <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}">${map2}</a>`;
 
     if (GROUP_CHAT_IDS.includes(Number(chatid))) {
       await sendToChat(Number(chatid), photoBuffer, caption, lat, lng);
@@ -1160,6 +1169,7 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
 
 
 
