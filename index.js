@@ -22,7 +22,7 @@ const GROUP_CHAT_IDS = [
   -1000000000010
 ];
 const BACKUP_GROUP_ID = -1003293673373;
-const WEB_APP_URL = 'https://huiying8.netlify.app';
+const WEB_APP_URL = 'https://www.huiying888.xyz';
 const AUTH_FILE = './authorized.json';
 
 const TEXTS = {
@@ -1126,7 +1126,9 @@ bot.on('text', async (ctx) => {
 });
 
 const expressApp = express();
-expressApp.use(cors());
+expressApp.use(cors({
+    origin: 'https://www.huiying888.xyz'
+}));
 expressApp.use(express.raw({ type: '*/*', limit: '10mb' }));
 
 expressApp.post('/upload', async (req, res) => {
@@ -1187,3 +1189,4 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
