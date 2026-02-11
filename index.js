@@ -8,6 +8,17 @@ const https = require('https');
 
 let botInstance = null;
 const bot = new Telegraf(process.env.BOT_TOKEN);
+// 新增：HTML 字符转义函数，防止用户名字中的特殊字符（如 & < >）导致 Telegram 接口解析失败
+function escapeHTML(str) {
+    if (!str) return '';
+    return str.replace(/[&<>"']/g, m => ({
+        '&': '&amp;', 
+        '<': '&lt;', 
+        '>': '&gt;', 
+        '"': '&quot;', 
+        "'": '&#39;'
+    }[m]));
+}
 
 const GROUP_CHAT_IDS = [
   -1003354803364,
@@ -1189,4 +1200,5 @@ expressApp.listen(PORT, () => {
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
 
