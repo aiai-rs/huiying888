@@ -1,3 +1,5 @@
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
 const { Telegraf, Markup } = require('telegraf');
 const fs = require('fs');
 const express = require('express');
